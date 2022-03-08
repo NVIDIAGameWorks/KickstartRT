@@ -1,5 +1,11 @@
 # KickStart RTX
 
+## NRD enabled config.
+Currently NRD is disabled by default.
+To enable NRD,
+1. Under thirdparty directory, do `git clone --recursive -b v2.10.0 git@github.com:NVIDIAGameWorks/RayTracingDenoiser.git`
+1. Run KikstartRT's cmake with enabling `KickstartRT_SDK_WITH_NRD` option.
+
 ## What's KickStartRTX?
 This SDK aims to achieve higher quality reflection and GI rendering than screen space ones, using hardware ray-tracing functionality without having to set up shaders and shader resources for ray-tracing.  
 When implementing ray-tracing into an existing game engine, one of the biggest problems is preparing the shaders for reflection and GI rays.
