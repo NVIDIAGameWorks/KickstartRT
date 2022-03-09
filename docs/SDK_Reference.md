@@ -281,7 +281,6 @@ Log is a namespace that contains functions to control the output of error and ot
 
 ### Version
 The namespace that stores the version number of the SDK. When initializing, the SDK passes the version number described in the header file as the default argument, compares it with the version number in the library’s binary and displays an error or message if it differs and doesn't have compatibility.
-
 ### Math
 This is a namespace for some vector and matrix types. They are used as input data types for various tasks.
 
@@ -309,9 +308,8 @@ GeometryHandle -- Reference --> BVHTasks
 BVHTasks -- Schedule --> TaskContainer
 TaskContainer -- BuildGPUTask --> ExecuteContext
 ```
-Instance reference a Geometry Handle to place a geometry in world space. Once it is placed, the instance continues to exist in world space until it is explicitly destroyed. It also needs to be updated if its location (4x3 matrix) changes. To do this, an Instance Handle is provided as an identifier for an instance.
-Denoising Context Handle
-Denoising Context Handle is a handle that holds an intermediate render target needed for denoising the ray tracing result. The resource continues to be held until it is explicitly destroyed. While it is preferable to reuse the intermediate render target as long as the rendering resolution does not change, but it also needs to be destroyed and regenerated if the resolution changes or  the rendering settings change.  To do this, an Denoising Context Handle is provided as an identifier for an intermediate render target and referred by various denoising render tasks.
+<span style="color:green">An Instance is used to place a Geometry in world space</span>. Once it is placed, the instance continues to exist in world space until it is explicitly destroyed. It also needs to be updated if its location (4x3 matrix) changes. To accomplish this, an InstanceHandle is provided as an identifier for an instance.
+
 
 ### DenoisingContextHandle
 ``` mermaid
@@ -323,8 +321,7 @@ RenderTasks -- Schedule --> TaskContainer
 TaskContainer -- BuildGPUTask --> ExecuteContext
 ```
 
-This is a handle that holds the intermediate render target needed for denoising the ray tracing result with multi-pass rendering. The resource will continue to be held until the corresponding handle is explicitly destroyed. While it is preferable to reuse the intermediate render target as long as the rendering resolution does not change, it also needs to be destroyed and recreated if the resolution changes or the rendering settings change. Application needs to manage the handles properly with its rendering.
-
+<span style="color:green">The DenoisingContextHandle is a handle that holds an intermediate render target needed for denoising the ray tracing result with multi-pass rendering. The resource will continue to be held until the corresponding handle is explicitly destroyed. While it is preferable to reuse the intermediate render target as long as the rendering resolution does not change, it also needs to be destroyed and recreated if the resolution changes or the rendering settings change. A DenoisingContextHandle is provided to the various denoising render Tasks structures as an identifier for an intermediate render target for denoising.  So it is advisable to reuse a denoising context if possible to reduce held resources.</span>
 
 ### GPUTaskHandle
 ``` mermaid
@@ -335,24 +332,26 @@ ExecuteContext -- BuildGPUTask --> GPUTaskHandle
 GPUTaskHandle -- MarkGPUTaskAsComplete --> ExecuteContext
 
 ```
-This handle is passed to the application by the SDK when a command list is built. The SDK does not interact with the GPU's execution queue at all, so the application needs to notify the SDK when the corresponding GPU processing has been completed by returning the handle. The SDK will then know when the GPU processing is complete and can safely release or reuse the resources that have been used by the corresponding command List. The application should call MarkGPUTaskAsCompleted to return it to the SDK as soon as possible.
-When initializing the SDK, "supportedWorkingsets" in the ExecuteContext_InitSettings structure correspond to the maximum number of command lists that can be “in-flight” at the same time. If it is set to a large number, many command lists can be put into the GPU’s execution queue at the same time, but if it is unnecessarily large, unused resources will be allocated in the SDK, which is wasting. Please set it appropriately.
+<span style="color:green">A GPUTaskHandle is passed back to the application by the SDK when a command list is built in order to track execution. As the SDK does not interact with the GPU's execution queue at all, the application must notify the SDK when the corresponding GPU processing has been completed by returning the GPUTaskHandle. The SDK will then know when the GPU processing is complete and can safely release or reuse the resources that have been used by the built command List. The application should call MarkGPUTaskAsCompleted() to return GPUTaskHandle to the SDK as soon as possible.</span>
+
+<span style="color:green">When initializing the SDK, "supportedWorkingsets" in the ExecuteContext_InitSettings structure corresponds to the maximum number of command lists that can be in-flight at the same time. If it is set to a large number, many command lists can be put into the GPU’s execution queue at the same time.  However, if it is unnecessarily large unused resources will be allocated internally to the SDK, which is a waste. Please set it appropriately for the workloads and execution environment.</span>
 
 ## Threading  
-The SDKs for D3D12 and Vulkan do not have worker threads internally. This is to keep the SDK itself simple, and because the implementation of multi-threading is expected by the application. This chapter explains how to use the SDK on multithreading.
+The SDKs for D3D12 and Vulkan do not have worker threads internally. This is to keep the SDK itself simple and because the implementation of multi-threading is expected by the application. This chapter explains how to use the SDK with multithreading.
 
-### Multi threaded implementation model with multiple task containers
-Execute Context creates a Task Container and can schedule various tasks in it. Since multiple task containers can be created and each of them has no exclusions, they can be handled efficiently on multi-threads.
-However, a BuildGPUTask call of ExecuteContext is blocked by a mutex even if it is called from multiple threads. This is because there is a dependency between the acceleration structure update by the BVH Task and the GBuffers used by the Render Task, so their execution schedule  needs to be clear. (Also, the SDK does not set up mutexes for individual internal resources.)
-Also, for the above reasons, the command list generated by the SDK needs to be executed on the GPU in the order in which it was generated.
+### Multithreaded implementation using multiple task containers
+<span style="color:green">An ExecuteContext creates a TaskContainer and can schedule various tasks in it. Since multiple task containers can be created and each of them has no exclusions, they can be handled efficiently on multi-threads.
+There is **one exception** which is the BuildGPUTask call to ExecuteContext.  This call is blocked by a mutex even if it is called from multiple threads because there is a dependency between the acceleration structure update by the BVH Task and the GBuffers used by the Render Task, so their execution order should be clearly defined. Note that because the SDK does not set up mutexes for individual internal resources the command list generated by the SDK needs to be executed on the GPU in the order in which it was generated.
+</span>
 
 ### Lifetime of handles and BuildGPUTask
-Each handle is referenced by a task and it is stored in a task container and is eventually used in a command list. Tasks are stored in a task container while handles are created and destroyed via ExecuteContext. After destroying the handle referenced by the task, if you call BuildGPUTask with the task container which schedules it, an invalid handle will be detected while in the BuildGPUTask.
-On the other hand, even if the handle is destroyed after the BuildGPUTask is called, the actual destruction of the resources inside the SDK will be at the beginning of the first BuildGPUTask call after the corresponding GPUTaskHandle is returned to the SDK.
-While this is convenient for creating and destroying handles in the ordinal rendering loop, it also causes a problem in cases where large scale release and allocation of handles occur, such as level loading, where the required VRAM is doubled for a short time. In such a case, VRAM can be released immediately by calling ReleaseDeviceResourceImmediately. However, for this process, all SDK built command lists must be completed and all GPUTaskHandle must be returned.
+Each handle is referenced by a task and it is stored in a task container and is eventually used in a command list. Tasks are stored in a TaskContainer while handles are created and destroyed via ExecuteContext. After destroying the handle referenced by a task the handle will become invalid.  Thus if you call BuildGPUTask with that task container to schedules it, the invalid handle will be detected during the call and an error will occur.
+However, even if a handle is destroyed after BuildGPUTask is called, the actual destruction of the resources inside the SDK will occur the first BuildGPUTask call after the corresponding GPUTaskHandle is returned to the SDK (which indicates GPU execution has completed).
 
-## Mutex and Blocking Conditions in SDK.
-There are three mutex that the application need to consider when developing.
+While this lazy destruction behavior is convenient for creating and destroying handles in the ordinal rendering loop, it can cause problems in cases where large numbers of release and allocation of handles occur, such as level loading.  In these situations, the required VRAM is doubled for a short time. In such a case, VRAM can be released immediately by calling ReleaseDeviceResourceImmediately. Please note that for this call to function properly **all SDK built command lists must be completed and all GPUTaskHandle must be returned**.
+
+## Mutex and Blocking Conditions in SDK
+There are three mutexes used in the SDK that an application needs to consider.
 
 ``` mermaid
 flowchart LR
@@ -397,11 +396,12 @@ This is a mutex that is held by each task container to exclude other schedule***
 
 ## Input Resources
 There are a variety of input resources from the application to the SDK. In order for the SDK to process the input resources correctly, the following rules must be observed.
-Supported Resource types and formats
+
+### Supported Resource types and formats
 Supported resource types and formats are depending on the individual Task. Please refer to the API Reference for details.
 
 ### Resource life time
-All input resources must not be destroyed until the application returns a GPU Task Handle for the command list built with a scheduled task using the resource. SDK doesn't increment reference counter of D3D resource. Therefore, discarding a resource while using it in the SDK or command list built by the SDK will result in unpredictable behavior.
+All input resources must not be destroyed until the application returns a GPU Task Handle for the command list built with a scheduled task using the resource. **SDK doesn't increment reference counter of D3D resource**. Therefore, discarding a resource while using it in the SDK or command list built by the SDK will result in unpredictable behavior.
 
 ```mermaid
 sequenceDiagram
@@ -419,11 +419,15 @@ sequenceDiagram
 ```
 
 ### Resource states
-All input resources to the SDK has expected resource states. It is shown in the table below.
-The only complicated case is Reflection, AO, Shadow drawn by SDK and then denoising them in the same task container. In this case, the same resource is appeared for both input and output of render tasks and resource transitions are performed inside the SDK. The application needs to set the resource state to the expected one for the first use in the scheduled render tasks.
-Also, if a resource state transition is made inside the SDK, it will transition to the expected resource state at the end of the command list SDK built. Notice that SDK doesn't know the actual original resource state, so it will be set to the expected resource state. This should be fine as long as the application keeps the SDK's expected resource state.
-As for D3D12, the SDK will set AssertResourceState if debug command list interface is available in the debug build, to verify all input resource states are set correctly. In other cases, the SDK does not check the input resource states.
-As for Vulkan, besides meeting the expectation of image layout for textures, all resources must satisfy  pipeline barrier to safely consume resources at compute shader stage. 
+All input resources to the SDK have expected resource states. These are shown in the table below.
+
+The only complicated case is Reflection, AO or Shadows drawn by SDK and then denoising them with tasks in the same task container. In this case, the same resource is used for both input and output of render tasks and **resource transitions are performed inside the SDK**. The application only needs to set the resource state to the expected one for the first use in the scheduled render tasks.
+
+Also, if a resource state transition is made inside the SDK, it will transition to the expected resource state at the end of the command list the SDK built. Notice that **SDK doesn't know the actual original resource state, so it will be set to the expected resource state**. This should be fine as long as the application keeps the SDK's expected resource state.
+
+When using D3D12, the SDK will set AssertResourceState if debug command list interface is available in the debug build, to verify all input resource states are set correctly. In other cases, the SDK does not check the input resource states.
+
+When using Vulkan, besides meeting the expectation of image layout for textures, all resources must satisfy  pipeline barrier to safely consume resources at compute shader stage. 
 
 | Inpput Resources | Expected Resource State in D3D12 | Expected VkImageLayout and VkAccessFlagBits in VK |
 | ---- | ---- | ---- |
@@ -435,23 +439,30 @@ As for Vulkan, besides meeting the expectation of image layout for textures, all
 
 
 ## Internal Resources
-Lastly, this chapter describes the resources that the SDK creates and uses internally. If you simply want to use the SDK, you don't need to read through this chapter and can skip it.
+Lastly, this section describes the resources that the SDK creates and uses internally. If you simply want to use the SDK, you don't need to read through this chapter and can skip it.
 
 ### Descriptor Heap and Constant Buffer
 When the SDK builds a command list from a Task Container, it uses a set of a descriptor heap and a constant buffer that the SDK manages internally. These are managed by a class named TaskWorkingSet. When performing ray tracing, the SDK generates a descriptor table based on the number of registered instances. This descriptor table is approximately twice as large as the number of registered instances. Therefore, if a large number of Instances are registered, the descriptor heap may not be able to allocate memory and an error may occur.
-The SDK does not dynamically change the size of the descriptor heap. The size of the descriptor heap can be set in the ExecuteContext_InitSettings structure when initializing the SDK. If this value is too large, it will be a waste of memory, and if it is too small, it will cause an error if too many instances are registered. Choose an appropriate value according to the contents.
+
+The SDK does not dynamically change the size of the descriptor heap. The size of the descriptor heap can be set in the ExecuteContext_InitSettings structure when initializing the SDK. If this value is too large it will be a waste of memory, and if it is too small it will cause an error if too many instances are registered. Choose an appropriate value according to the contents.
 
 ### Buffers for Index and Vertex Buffers
-The index and vertex buffers input from the application are copied to a buffer once in the SDK, along with transformations, index reordering, and other processing. These buffers are allocated on a shared buffer, meaning that one large buffer accommodates multiple geometries. This reduces the frequent VRAM allocation and deallocation.
+The index and vertex buffers input from the application are copied to a seperate buffer once in the SDK along with transformations, index reordering, and other processing. These buffers are allocated using a shared buffer, meaning that one large buffer accommodates multiple geometries. This reduces the frequent VRAM allocation and deallocation.
+
 For static geometries, the buffer is released when its BLAS has been built, but for dynamic geometries (a geometry that performs an update to local vertex position change) is not released even after the BLAS is built. Therefore, static and dynamic geometry are managed in separate shared buffers.
+
 By generating a copy of the vertex buffer, the SDK can tweak the number of BLASs created per BVHBuildTask in order to adjust the BLAS creation load.
 
 ### Buffers for Direct Lighting Cache
 The Direct Lighting Cache is a buffer for storing the direct lighting result over the surfaces of the instances input to the SDK. Along with the vertex buffer copy process described above, the SDK internally calculates the size of this buffer for each geometry based on the surface area of the polygon and its edge length, and the SDK reads back the calculated size to the CPU side to reserve a buffer for actual direct lighting storage. For these processes, buffers for read back and atomic counter are required. Since it is not memory efficient to allocate many small buffers, these buffers are shared within the SDK.
 
 ### Buffers for BLAS, TLAS
-Buffers for BLAS construction also use shared buffers, but they are divided into several types depending on their use. Scratch buffer is required for BLAS construction. The buffer for BLAS and scratch buffer are managed in separate shared buffers. In addition, the SDK internally performs BLAS compactions on static geometries. Therefore, there are four types of shared buffers for BLAS.
+Buffers for BLAS construction also use shared buffers, but they are divided into several types depending on their use. 
+
+A scratch buffer is required for BLAS construction. The buffer for BLAS and scratch buffer are managed in separate shared buffers. In addition, the SDK internally performs BLAS compactions on static geometries. Therefore, there are four types of shared buffers for BLAS.
+
 TLAS, on the other hand, uses dedicated buffers that are not shared at all.
-Intermediate render targets for denoising
-The intermediate render target for denoising is rather explicitly managed by the application with the Denoising Context Handle, but the actual memory management is done by the SDK.  One point to note is that after calling Register and Destroy in ExecuteContext, the actual creation and destruction of resources are done in the next BuildGPUTask call.
+
+### Intermediate render targets for denoising
+The intermediate render target for denoising is explicitly managed by the application using the DenoisingContextHandle, but the actual memory management is done by the SDK.  One point to note is that after calling Register and Destroy in ExecuteContext, the actual creation and destruction of resources are done lazily in the next BuildGPUTask call.
 
