@@ -19,13 +19,16 @@ In addition, if there is a sudden change in the lighting environment or object m
 For detailed information of KickStart RTX, please refer to the separate document. Here's a rough idea of how it works
 
 1. The application passes the vertex and index buffers of the geometry in the scene to the SDK so taht it builds the BVH of the scene internally.
-The SDK also receives information such as updates on geometry shapes, instance position, newly placed instances or removed, etc...
+The SDK also receives information such as updates on geometry shapes, instance position, newly placed instances or removed, etc...  
+![Slide1](https://user-images.githubusercontent.com/5753935/157593405-1a18be4e-893c-4d14-b104-773f69738ac3.png)
 
 1. The application passes the G-buffer which contains lighting along with depth and normal to the SDK.
-The SDK stores the information of the G-buffer in the lighting cache in world space. Therefore, it also receives projection matrix and view matrix information along with the G-Buffer, that are needed to reconstruct world space position.
+The SDK stores the information of the G-buffer in the lighting cache in world space. Therefore, it also receives projection matrix and view matrix information along with the G-Buffer, that are needed to reconstruct world space position.  
+![Slide2](https://user-images.githubusercontent.com/5753935/157593410-c6a037ec-3d1b-4f14-a19c-9dbbf10560b4.png)
 
 1. SDK performs raytracing internally and passes Reflection and GI results to the application.
-The SDK performs raytracing based on the camera position specified by the application, renders reflection and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.
+The SDK performs raytracing based on the camera position specified by the application, renders reflection and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.  
+![Slide3](https://user-images.githubusercontent.com/5753935/157593412-758d200b-da90-4b69-ab25-bc75545f0dca.png)
 
 ## Other references
 

@@ -199,6 +199,11 @@ namespace RenderTask {
 		CHECKERBOARD_INVERTED = 2
 	};
 
+	// A type of diffuse BRDF that will be used by the diffuse reflection (GI) pass.
+	//  - Lambertian type is a simple Lambertian diffuse BRDF.
+	//  - NormalizedDisney type is a diffuse BRDF sensitive to roughness, designed to be energy 
+	//    conserving when combined with specular BRDF. I.e. after adding diffuse and specular 
+	//    reflections together, this BRDF ensures result will never be more than 1
 	enum class DiffuseBRDFType : uint32_t {
 		Lambertian = 0,
 		NormalizedDisney = 1
