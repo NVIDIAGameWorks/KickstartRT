@@ -798,25 +798,45 @@ namespace RenderTask {
 	};
 };
 
-// ==============================================================
-// BVHTask
-// ==============================================================
-// These data structures are for geometry inputs.
-// ==============================================================
-// This corresponds of a BLAS
+
+/**
+* A handle to keep and identify geometry which represents a bottom level acceleration structure (BLAS).
+* SDK holds corresponded GPU resource and some sates while the handle is valid and live. ExecuteContext creates and destroys it.
+* This handle is required to schedule various kind of BVH tasks defined below.
+* Users need to maintain the lifetime of the handle and properly destroy it when it doen't need anymore to optimize VRAM usage.
+*/
 enum class GeometryHandle : uint64_t { Null = 0 };
 
-// This corresponds of a instance of TLAS, but it also keeps direct lighting cache. 
+/**
+* A handle to keep and identify an instance of a geometry which represents an instance of top level acceleration structure (TLAS).
+* An instance is participating in the scene while the handle is valid and live. ExecuteContext creates and destroys it.
+* This handle is required to schedule various kind of BVH tasks defined below.
+* Users need to maintain the lifetime of the handle and properly destroy it when it doesn't need anymore to optimize TLAS.
+*/
 enum class InstanceHandle : uint64_t { Null = 0 };
 
+/**
+* This is a namespace for all tasks to process geometries and instances including BVH processing.
+* A list of BVH tasks are interpreted to a set of dispatches into a command list to pre-process geometries, allocate direct lighting caches, and BLAS, TLAS buildings.
+*/
 namespace BVHTask
 {
+	/**
+	* Both GeometryTask and InsntaceTask have Register and Update tasks.
+	* Register is used when a geometry or an instance is newly introduced into the scene.
+	* Update is used when a geometry's local vertex position has been changed whith keeping its topology, or, used when an instance's world position is changed.
+	*/
 	enum class TaskOperation : uint32_t
 	{
 		Register = 0,
 		Update = 1,
 	};
 
+	/**
+	* This is a structure to provide information to SDK when registering a geometry.
+	* Basically, it consisted input vertex and indices buffers to represent an object with polygons.
+	* It also has some additional information needed when building direct lighting cache and BLAS.
+	*/
 	struct GeometryInput {
 		enum class Type : uint32_t
 		{
@@ -824,11 +844,21 @@ namespace BVHTask
 			Triangles
 		};
 
+		/**
+		* Surfel type of direct lighting cache. While WarpedBarycentricStorage provides a simple and small memory footprint,
+		* MeshColors provides an opportunity to interpolate surfel’s color over surfaces.
+		* In short, you can start with default (WarpedBarycentricStorage). When when you find a corner-case of
+		* reflected surface’s flickering or a blocky rendering on smooth reflections, you should consider switching to MeshColors.
+		*/
 		enum class SurfelType : uint32_t {
 			WarpedBarycentricStorage,
 			MeshColors
 		};
 
+		/**
+		* This is directly interpreted to a build flag when building a BLAS.
+		* General advice for these flags can be find on various articles or presentations stored on the Internet.
+		*/
 		enum class BuildHint : uint32_t {
 			// Auto will use heuristics to select the optimal build flag hint
 			Auto,	
@@ -839,20 +869,40 @@ namespace BVHTask
 
 		const wchar_t* name = nullptr;
 
-		// Enabling this flag will skip tile allocation calculation and directly map each lighting cache to each polygon. Enabling this frag will suit for high density meshes
-		// SDK also use direct mapping if calculated tile number is close enough to the number of primitive. The threshold value is set when initializng the SDK by
-		// Only compatible with SurfelType::TileCache
+		/** 
+		* Enabling this flag will skip surfel allocation calculation and directly map each surfel to each polygon.
+		* Enabling this frag will suit for high density meshes. SDK also switches to direct mapping automatically if calculated tile number is close enough to the number of primitive.
+		* The threshold value is set by directTileMappingThreshold.
+		* This is only valid with SurfelType::TileCache.
+		*/
 		bool				forceDirectTileMapping = false;	
 
-		// Direct tile mapping will be used if (number of polygons) / (calculated number of lighting cache tiles) exceeds the threshold.
-		// In this case, SDK simply assign a lighting cache tile each polygon. 
+		/**
+		* The threshold value to control direct tile mapping mode described above.
+		*/
 		float				directTileMappingThreshold = 0.7f; 
 
+		/**
+		* Set true when a geometry is planned to be updated. Dynamic and Static geometries are allocated in different memory pool to avoid fragmentations.
+		*/
 		bool					allowUpdate = false;
 		bool					useTransform = false;
 		Math::Float_3x4			transform = Math::Float_3x4::Identity();
+
+
+		/**
+		* When allocating surfels, SDK tries to allocate them along with the tile unit length.
+		* If you set a smaller value larger number of surfels will be allocated on the same size of a polygon.
+		* Users need to find out the best balance between quality and VRAM usage.
+		*/
 		float					tileUnitLength = 1.f;
+
+		/**
+		* This is a upper limit value of surfel resolution along a polygon edge. This is to avoid allocating massive amount of surfels for a huge primitive.
+		* Users can set a large number with a lisk of huge VRAM allocations.
+		*/
 		uint32_t				tileResolutionLimit = 64u;
+
 		Type					type = Type::TrianglesIndexed;
 		SurfelType				surfelType = SurfelType::MeshColors;
 		BuildHint				buildHint = BuildHint::Auto;
@@ -860,9 +910,13 @@ namespace BVHTask
 		VertexBufferInput	vertexBuffer;
 		IndexBufferInput	indexBuffer;
 
-		// This is an optional parameter to optimize VRAM usage for copies of vertex and index buffer in SDK.
-		// SDK copies vertex and index buffer for each geometry indstance and if application prvides a large vertex buffer and an index buffer which refers few vertices,
-		// that will result in an inefficient VRAM allocation. This parameter is to limit the region of vertex buffer which is actually being used by this geometry, to make an efficent copy of vertex buffer.
+		/** 
+		* This is an optional parameter to optimize VRAM usage for copies of vertex and index buffer in SDK.
+		* SDK copies vertex and index buffer for each geometry once when building BLAS.
+		* If users provides a large vertex buffer and an index buffer which refers few vertices,
+		* that will result in an inefficient VRAM allocation because SDK has to copy the entire vertex buffer for few primitives.
+		* This parameter is to limit the region of vertex buffer which is actually being used by this geometry, to make an efficient copy of vertex buffer.
+		*/
 		struct {
 			bool					isEnabled = false;
 			uint32_t				minIndex = 0;
@@ -870,6 +924,11 @@ namespace BVHTask
 		} indexRange;
 	};
 
+	/**
+	* This is a structure to provide information to the SDK when registering an instance.
+	* An instance acts as an instance of a top-level acceleration structure
+	* by setting a 4x3 matrix and refering a GeometryHandle which represents a BLAS.
+	*/
 	struct InstanceInput {
 		const wchar_t* name = nullptr;
 		Math::Float_3x4		transform = Math::Float_3x4::Identity();
@@ -878,6 +937,9 @@ namespace BVHTask
 		float				initialTileColor[3] = { 0.f, 0.f, 0.f };
 	};
 
+	/**
+	* The base class of various BVH tasks.
+	*/
 	struct Task {
 		enum class Type : uint32_t {
 			Unknown = 0,
@@ -892,6 +954,11 @@ namespace BVHTask
 		Task(Type typ) : type(typ) {};
 	};
 
+	/**
+	* This task is used when registering and updating a geometry.
+	* A geomety essentially acts as a BLAS in the SDK.
+	* A GeometryHandle is needed to be created through the ExecuteContext in advance of scheduling the task.
+	*/
 	struct GeometryTask : public Task
 	{
 		GeometryTask() : Task(Type::Geometry) {};
@@ -901,6 +968,11 @@ namespace BVHTask
 		GeometryInput	input;
 	};
 
+	/**
+	* This task is used when registering and updating an instance.
+	* An instance acts as an instance of a top-level acceleration structure.
+	* An InstanceHandle is need to be created through the ExecuteContext in advance of scheduling the task.
+	*/
 	struct InstanceTask : public Task
 	{
 		InstanceTask() : Task(Type::Instance) {};
@@ -910,13 +982,25 @@ namespace BVHTask
 		InstanceInput	input;
 	};
 
+	/**
+	* This is a task to schedule BVH build process to the task container.
+	* If any of a geometry or an instance has been updated by a scheduled task, or, any of them is destroyed via ExecuteContext,
+	* this task must be scheduled with buildTLAS flag before doing any rendering tasks.
+	* Otherwise SDK will produce an error, since any of rendering task cannot run with an obsolete TLAS.
+	*/
 	struct BVHBuildTask : public Task
 	{
-		// The max number of BLASes to be built from the build queue.
+		/** 
+		* The max number of BLASes to be built from the build queue.
+		* When registering geometries, building BLAS processes are stacked up on a queue
+		* and are processed by the number of maxBlasBuildCount to avoid sudden long processing time.
+		*/
 		uint32_t maxBlasBuildCount = 4u;
 
-		// TLAS build is automatically skipped if there isn't any scene shange. 
-		// TLAS need to be updated in advance of render tasks if any scene chagne is happend by any GeometryTask, InstanceTask or destroy them via execute context.
+		/**
+		* Set true to build TLAS.
+		* TLAS build is automatically skipped even the flag is set to true if there isn't any geometry or instance update.
+		*/
 		bool	 buildTLAS = true;
 
 		BVHBuildTask() : Task(Type::BVHBuild) {};
@@ -924,11 +1008,9 @@ namespace BVHTask
 
 };
 
-// ==============================================================
-// Task Container
-// ==============================================================
-// Task container stores information to build a task which is essentially a command list. 
-// ==============================================================
+/** 
+ * Task container stores various RenderTask and BVHTask which will then turned into a command list via ExecuteContext.
+ */
 struct KickstartRT_DECLSPEC_INL TaskContainer {
 protected:
 	TaskContainer();
@@ -942,36 +1024,49 @@ public:
 };
 
 #if !defined(KickstartRT_ExecutionContext_Interop)
-// ==============================================================
-// GpuTaskHandle
-// ==============================================================
-// GpuTaskHandle corresponds the commnad list built by SDK.
-// SDK user has to tell the completion of the GPU task by calling FinishGPUTask() with the handle.
-// ==============================================================
+/**
+ * This handle is provided when the SDK builds a command list.
+ * The handle represents the life-time of the command list, so if it's alive,
+ * it means the command list is in-flight in the GPU.
+ * Users must return the handle as soon as it can by calling MarkedGPUTaskCompleted() function with the handle,
+ *  so that SDK can reuse the resources in subsequent GPU tasks.
+ */
 enum class GPUTaskHandle : uint64_t { Null = 0 };
 #endif
 
-// ==============================================================
-// Execute context
-// ==============================================================
-// The main gate of the SDK. 
-// An instance of this struct represents the execute context of SDK.
-// ==============================================================
+/**
+ * The main gate of the SDK. 
+ * An instance of this struct represents the execute context of SDK.
+ */
 struct KickstartRT_DECLSPEC_INL ExecuteContext {
-	// defined in API dependent part.
-	// struct ExecuteContext_InitSettings
 protected:
 	virtual ~ExecuteContext();
 	ExecuteContext();
 
 public:
+	/**
+	 * Initalzie the SDK.
+     * @param [in] setting A setting to be used when initializing the SDK.
+	 * @param [out] exc A valid pointer should be returned when initialization is succeeded.
+	 * @param [in] headerVersion It will be compared against lib's version. It must be compatible to the lib's version.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	static Status Init(const ExecuteContext_InitSettings* settings, ExecuteContext** exc, const KickstartRT::Version headerVersion = KickstartRT::Version());
+
+	/**
+	 * Destruct the SDK.
+	 * @param [in] exc A pointer to an execute context.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	static Status Destruct(ExecuteContext* exc);
 
+	/**
+	 * Creates a task container. 
+	 */
 	virtual TaskContainer* CreateTaskContainer() = 0;
 
 	/**
-	* (Thread safe). Creates a denoising context handle. 
+	* Creates a denoising context handle. 
 	* It's expected to have a denoising context handle allocated for each effect (Reflections, GI, AO, Shadows) used,
 	* to compare different denoiser methods (NRD_Relax vs NRD_Reblur) new context(s) must be created.
 	* @param [in] input a denoising context handle description. 
@@ -979,7 +1074,7 @@ public:
 	virtual DenoisingContextHandle CreateDenoisingContextHandle(const DenoisingContextInput* input) = 0;
 	
 	/**
-	* (Thread safe). Destroys a denoising context handle. 
+	* Destroys a denoising context handle. 
 	* It's safe to call this function before the render tasks referencing the handle have been finalized (I.e MarkGPUTaskAsCompleted is called),
 	* the SDK will defer deletion of the underlying resources until the render tasks have completed.
 	* @param [in] handle a denoising context handle.
@@ -991,38 +1086,148 @@ public:
 	*/
 	virtual Status DestroyAllDenoisingContextHandles() = 0;
 
+	/**
+	 * Creates a geometry handle.
+	 */
 	virtual GeometryHandle CreateGeometryHandle() = 0;
+
+	/**
+	 * Creates geometry handles.
+	 * @param [in] handles A storage for the handles. The size must be larger than nbHandles.
+	 * @param [in] nbHandles A number of handles to be created.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status CreateGeometryHandles(GeometryHandle* handles, uint32_t nbHandles) = 0;
+
+	/**
+	 * Destroys a geometry handle.
+	 * @param [in] handle A geometry handle to destroy.
+	 */
 	virtual Status DestroyGeometryHandle(GeometryHandle handle) = 0;
+
+	/**
+	 * Destroys geometry handles.
+	 * @param [in] handles A storage for the handles. The size must be larger than nbHandles.
+	 * @param [in] nbHandles A number of handles to be destroyed.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status DestroyGeometryHandles(const GeometryHandle* handles, uint32_t nbHandles) = 0;
+
+	/**
+     * Destroys all geometry handles that are currently valid and live.
+     */
 	virtual Status DestroyAllGeometryHandles() = 0;
 
+	/**
+	 * Creates an instance handle.
+	 */
 	virtual InstanceHandle CreateInstanceHandle() = 0;
+
+	/**
+	 * Creates instance handles.
+	 * @param [in] handles A storage for the handles. The size must be larger than nbHandles.
+	 * @param [in] nbHandles A number of handles to be created.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status CreateInstanceHandles(InstanceHandle* handles, uint32_t nbHandles) = 0;
+
+	/**
+	 * Destroys an instance handle.
+	 * @param [in] handle An instance handle to destroy.
+	 */
 	virtual Status DestroyInstanceHandle(InstanceHandle handle) = 0;
+
+	/**
+	 * Destroys instance handles.
+	 * @param [in] handles A storage for the handles. The size must be larger than nbHandles.
+	 * @param [in] nbHandles A number of handles to be destroyed.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status DestroyInstanceHandles(const InstanceHandle* handles, uint32_t nbHandles) = 0;
+
+	/**
+	 * Destroys all instance handles that are currently valid and live.
+	 */
 	virtual Status DestroyAllInstanceHandles() = 0;
 
 #if defined(KickstartRT_ExecutionContext_Interop)
+	/**
+	 * This is for D3D11 interop layer only.
+	 * By calling this, the SDK will create a command list on D3D12 and then execute it with D3D11 fence objects.
+	 * @param [in] container the task container for a GPU task.
+	 * @param [in] input An input structure which contains some parameters to build a GPU task.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status InvokeGPUTask(TaskContainer* container, const BuildGPUTaskInput* input) = 0;
 #else
+	/**
+	 * Builds a GPU command list with the provided TaskContainer and returns a valid GPUTaskHanlde.
+	 * It is SDK users responsibility to execute the built command list on an execution queue
+	 * and hands off the returned GPUTaskHandle when it's completed on the GPU.
+	 * @param [out] retHandle A GPUTaskHanldle It must be hand off via MarkGPUTaskAsCompleted() when the corresponded GPU task has been completed on the GPU.
+	 * @param [in] container A task container used to build a GPU command list.
+	 * @param [in] input An input structure which contains some parameters to build a GPU task.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status BuildGPUTask(GPUTaskHandle *retHandle, TaskContainer *container, const BuildGPUTaskInput* input) = 0;
+
+	/**
+	 * Hands off a GPUTaskHandle.
+	 * It is SDK users responsibility to hand off the returned GPUTaskHandle when the corresponded GPU task has been completed on the GPU.
+	 * @param [in] handle The GPUTaskHandle to be returned.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status MarkGPUTaskAsCompleted(GPUTaskHandle handle) = 0;
 #endif
+
+	/**
+	 * Immediately releases allocated resources and memories for destroyed geometry, instance and denoising context.
+	 * To call this method, all GPUTaskHandles must be returned to the SDK, so there is no in-flight GPU task.
+	 * This is to be called when the application want to change whole scene by loading a new level.
+	 * @param [in] handle The GPUTaskHandle to be returned.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status ReleaseDeviceResourcesImmediately() = 0;
 
+	/**
+	 * This returns shader IDs that currently loaded in the SDK. This list can be used when initializing the SDK next time
+	 * to compile shaders in advance of use to avoid shader compile hitching. 
+	 * @param [in, out] loadedListBuffer The storage to return the shader list. The size must be larger than the bufferSize.
+	 * @param [in] bufferSize The size of the loadedListBuffer.
+	 * @param [out] retListSize The size of the returned shader list.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status GetLoadedShaderList(uint32_t* loadedListBuffer, size_t bufferSize, size_t* retListSize) = 0;
 
+	/**
+	 * Returns the current VRAM resource allocation by the SDK.
+	 * @param [in, out] retStatus The storage to return the allocation information.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status GetCurrentResourceAllocations(KickstartRT::ResourceAllocations* retStatus) = 0;
+
+	/**
+	 * By calling this, A CSV file will be written to the provided path with the resouce allocation information.
+	 * This can be used to understand the current resource allocations.
+	 * @param [in] filePath A file path to write a CSV file.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status BeginLoggingResourceAllocations(const wchar_t* filePath) = 0;
+
+	/**
+	 * Stops logging resource allocations.
+	 * @return Returns Status::OK if succeeded.
+	 */
 	virtual Status EndLoggingResourceAllocations() = 0;
 };
 
-// ==============================================================
-// SDK Version
-// ==============================================================
+/**
+ * SDK Version
+ */
 namespace Version {
-	// returns a Version what library see at the compile time.
-	// inconsistent version between this header and what library returns will cause problems.
+	/**
+	 * Returns a Version what the library codes see at the compile time.
+	 * @return The SDK version
+	 */
 	KickstartRT_DECLSPEC_INL KickstartRT::Version GetLibraryVersion();
 };
