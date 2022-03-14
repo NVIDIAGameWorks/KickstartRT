@@ -88,7 +88,7 @@ At least the SDK checks the following features that need to be supported at the 
   - D3D12_RAYTRACING_TIER_1_0 or greater.
     Need 1.1 for Inline Raytracing.
 
-- Vulkan
+- Vulkan  
   Instance Extensions  
     - VK_EXT_debug_utils  
 
