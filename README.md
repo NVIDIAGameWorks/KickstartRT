@@ -1,6 +1,11 @@
 # KickStart RTX
 
-## What's KickStartRTX?
+1. [What's KickStartRTX](#1-whats-kickstartrtx)
+2. [How it works](#2-how-it-works)
+3. [Getting Started](#3-getting-started)
+4. [License](#4-license)
+
+## 1. What's KickStartRTX
 This SDK aims to achieve higher quality reflection and GI rendering than screen space ones, using hardware ray-tracing functionality without having to set up shaders and shader resources for ray-tracing.  
 When implementing ray-tracing into an existing game engine, one of the biggest problems is preparing the shaders for reflection and GI rays.
 All of the countless shaders that exist in a game scene must be listed and configured. We also need to make sure that the various shader resources (ConstantBuffer, Texture, etc.) can be accessed correctly from those shaders for each material. This can be a very complex task.  
@@ -8,14 +13,14 @@ Instead of setting up all the shaders, this SDK takes the lighting information f
 Therefore, the application does not need to configure shaders for ray-tracing at all.
 The SDK creates reflection and GI information by sampling the lighting information using ray-tracing internally, so lighting information for objects that are off-screen will also be sampled if it is stored in the SDK, which is the biggest difference from screen space based techniques.
 
-## Is this a complete replacement for ray-traced reflection or GI?
+#### Is this a complete replacement for ray-traced reflection or GI?
 No, it is not.  
 First, KickStart RTX takes the lighting information from the G-Buffer and stores it in world space, but SDK doesn't take into account what components it consists of (Diffuse, Specular, Fresnel etc...). It also does not take into account the material of the surfaces.
 Any surface of material that the ray hits will be evaluated as a full Lambertian, so the lighting information from the G-Buffer will be treated as radiance. This is a major compromise, as it frees the application from having to manage the materials for ray-tracing.
 On the other hand, each pixel in the screen space, which is the starting point for ray-tracing, can be evaluated as a material by passing parameters such as specular and roughness as textures.
 In addition, if there is a sudden change in the lighting environment or object movement in the scene, the lighting information stored in the SDK will obsolete and doesn't represent lighting well. In order to update the changed lighting, multiple G-Buffers containing the new lighting information must be continuously provided to the SDK for several frames. So there is a latency here and this is the another compromise.
 
-## How it works?
+## 2. How it works
 For detailed information of KickStart RTX, please refer to the separate document. Here's a rough idea of how it works
 
 1. The application passes the vertex and index buffers of the geometry in the scene to the SDK so taht it builds the BVH of the scene internally.
@@ -30,7 +35,7 @@ The SDK stores the information of the G-buffer in the lighting cache in world sp
 The SDK performs raytracing based on the camera position specified by the application, renders reflection and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.  
 ![Slide3](https://user-images.githubusercontent.com/5753935/157593412-758d200b-da90-4b69-ab25-bc75545f0dca.png)
 
-## Getting Started
+## 3. Getting Started
 
 Kickstart RT is designed from the ground up to provide a simple interface to common implementations of ray tracing techniques used in modern games.  It provides API support in Direct3D11/12 & Vulkan.  It can be compiled to Windows or Linux platforms including ARM instruction sets.  
 Kickstart is designed to be a dynamically linked runtime library that is linked to your application at build time. We provide full source code to all parts of the library so that you may build it yourself.
@@ -42,7 +47,7 @@ In addition to browsing the sample code, we encourage you to check out the forma
 #### Requirements
 The requirements to use Kickstart RT in built from source.
 
-#####Windows
+##### Windows
 - Cmake 3.22+  
   Tested with : 3.22.0
 - Visual Studio 2019+  
@@ -54,7 +59,7 @@ The requirements to use Kickstart RT in built from source.
 - PIX EventMarker runtime
   If you want to enable perf merker in SDK’s render passes. Tested with : 1.0.220124001.
 
-#####Linux
+##### Linux
 - Cmake 3.22+  
 - Vulkan SDK  
   Should be worked with 1.2 or higher. Tested with 1.2.189.
@@ -73,30 +78,29 @@ The requirements to use Kickstart RT in built from source.
 #### GPU Requirements
 At least the SDK checks the following features that need to be supported at the initialization. It doesn’t mean that the SDK guarantees to support all GPUs that fulfills the following features.
 
-##### D3D11
-- D3D11.4  
-  Need to support ID3D11Device5 to handle fence objects. 
+- D3D11
+  - D3D11.4  
+    Need to support ID3D11Device5 to handle fence objects. 
 
-##### D3D12 and 11
-D3D11 uses D3D12 as a backend of the rendering, so the requirement is basically the same.
-- D3D12_RESOURCE_BINDING_TIER_3
-- D3D12_RAYTRACING_TIER_1_0 or greater.
-  Need 1.1 for Inline Raytracing.
+- D3D12 and 11
+  D3D11 uses D3D12 as a backend of the rendering, so the requirement is basically the same.
+  - D3D12_RESOURCE_BINDING_TIER_3
+  - D3D12_RAYTRACING_TIER_1_0 or greater.
+    Need 1.1 for Inline Raytracing.
 
-##### Vulkan
-Instance Extensions  
-- VK_EXT_debug_utils  
+- Vulkan
+  Instance Extensions  
+    - VK_EXT_debug_utils  
 
-Physical Device features  
-- VK_EXT_buffer_device_address
-- VK_KHR_acceleration_structure  
-- VK_KHR_ray_tracing_pipeline  
+  Physical Device features  
+    - VK_EXT_buffer_device_address
+    - VK_KHR_acceleration_structure  
+    - VK_KHR_ray_tracing_pipeline  
 
-Device Extensions  
-- VK_KHR_ray_tracing_pipeline  
-- VK_KHR_ray_query
-  If enabling inline ray tracing.  
-
+  Device Extensions  
+    - VK_KHR_ray_tracing_pipeline  
+    - VK_KHR_ray_query
+      If enabling inline ray tracing.  
 
 #### Build Steps
 Kickstart is built using CMake, so the build instructions are pretty standard. 
@@ -137,7 +141,7 @@ Kickstart is built using CMake, so the build instructions are pretty standard.
 
 5. Windows resource files have been emulated with some CMake magic which has restrictions when adding new shaders. The shader rc file is dynamically creating at build time, rather than build generation time, so a pre-populated resource file is included in the project which will get over-written on the first build. If a new shader is added and the project has not been built yet, then the pre-populated rc file will need updating or Kickstart RT will fail to find the new shader.
 
-## License
+## 4. License
 
 This project is under the MIT License, see the LICENSE.txt file for details. Also, you may need to check licenses for dependent components.
 
