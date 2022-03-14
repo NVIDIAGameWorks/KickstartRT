@@ -1,6 +1,6 @@
 # Kickstart RT SDK Reference
 
-Table of contents
+Table of contents  
 [1. Overview and Execution Flow](#1-overview-and-execution-flow)  
 [2. NameSpace and Class structures](#2-namespace-and-class-structures)  
 [3. Handles](#3-handles)  
