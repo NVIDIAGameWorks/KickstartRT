@@ -56,7 +56,7 @@ The requirements to use Kickstart RT in built from source.
   Should be worked with 1.2 or higher. Tested with : 1.3.204.0 and 1.2.189.
 - Windows10 SDK  
   Any recent one should be fine. Tested with : 10.0.20348.0.  
-- PIX EventMarker runtime
+- PIX EventMarker runtime  
   If you want to enable perf merker in SDK’s render passes. Tested with : 1.0.220124001.
 
 ##### Linux
