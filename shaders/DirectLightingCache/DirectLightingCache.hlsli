@@ -24,8 +24,6 @@
 #include "../Shared/Binding.hlsli"
 #include "../Shared/Shared.hlsli"
 
-#define USE_TRIANGLE_TO_SQUARE_MAPPING 1
-
 #if !defined(KICKSTARTRT_ENABLE_DIRECT_LIGHTING_CACHE_INDIRECTION_TABLE)
 #error "KICKSTARTRT_ENABLE_DIRECT_LIGHTING_CACHE_INDIRECTION_TABLE has to be defined."
 #endif
@@ -99,8 +97,7 @@ uint2 fromRGBToYCoCg(float3 rgb, bool setClearTag)
     return data;
 }
 
-#if USE_TRIANGLE_TO_SQUARE_MAPPING
-// map triangle BC to unit square UV.
+// Map triangle BC to unit square UV.
 float2 BCToUV(in float2 bc)
 {
     float2 uv;
@@ -115,13 +112,6 @@ float2 BCToUV(in float2 bc)
     }
     return uv;
 }
-#else
-// nothing to do. use the half area of the tile.
-float2 BCToUV(inout float2 bc)
-{
-    return bc;
-}
-#endif
 
 namespace LightCache
 {
