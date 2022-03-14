@@ -106,23 +106,23 @@ At least the SDK checks the following features that need to be supported at the 
 Kickstart is built using CMake, so the build instructions are pretty standard. 
 
 ##### Windows build instructions
-1. Clone the repository
+1. Clone the repository  
   `git clone –recursive https://github.com/NVIDIAGameWorks/KickstartRT`
-2. Set up dependent libraries
-  - Windows SDK
-    You can download and install from [here](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/).      
-  - Vulkan SDK
-    You can download and install from [here](https://www.lunarg.com/vulkan-sdk/).
-    The installer will set `VULKAN_SDK` environment variable by default, and the CMake file refers it to find out the location of the SDK.
-    So, please be sure to set the value properly.  
-  - PIX WinPixEventRuntime
-    If you want to enable PIX in the SDK's render passes, you need to install PIX runtime which can download from [here](https://www.nuget.org/packages/WinPixEventRuntime). There are two options to enable PIX in the SDK.
-    - Set `PIX_EVENT_RUNTIME_SDK` environment variable with the path to the lib before configuring CMake.  
-    - Set `KickstartRT_PIX_EVENT_RUNTIME_SDK_PATH` in the CMake's configuration with the path to the lib.  
+2. Set up dependent libraries  
+   - Windows SDK
+     You can download and install from [here](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/).      
+   - Vulkan SDK
+     You can download and install from [here](https://www.lunarg.com/vulkan-sdk/).
+     The installer will set `VULKAN_SDK` environment variable by default, and the CMake file refers it to find out the location of the SDK.
+     So, please be sure to set the value properly.  
+   - PIX WinPixEventRuntime  
+     If you want to enable PIX in the SDK's render passes, you need to install PIX runtime which can download from [here](https://www.nuget.org/packages/WinPixEventRuntime). There are two options to enable PIX in the SDK.
+     - Set `PIX_EVENT_RUNTIME_SDK` environment variable with the path to the lib before configuring CMake.  
+     - Set `KickstartRT_PIX_EVENT_RUNTIME_SDK_PATH` in the CMake's configuration with the path to the lib.  
 3. CMake confiture and generate projects.  
   If you like, you can use CMake GUI to configure project files. You can set the destination folder anywhere but `build` directory just under the repository is preferred since it is already noted in `.gitignore`.   
 4. Build  
-  Open the Visual Studio solution which should be generated under `build` directory and build `ALL_BUILD` and `INSTALL`.    
+  Open the Visual Studio solution which should be generated under `build` directory and build `ALL_BUILD` and `INSTALL`.  
   After `INSTALL`, built files will be assembled into `build/package` directory. Can then copy this package into your game engine for integration.  
 
 ##### Linux build instructions
