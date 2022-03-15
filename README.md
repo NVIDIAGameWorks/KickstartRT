@@ -1,51 +1,50 @@
-# KickStart RTX
+# Kickstart RT
 
-1. [What's KickStartRTX](#1-whats-kickstartrtx)
+1. [What's Kickstart RT](#1-whats-kickstart-rt)
 2. [How it works](#2-how-it-works)
 3. [Getting Started](#3-getting-started)
 4. [License](#4-license)
 
-## 1. What's KickStartRTX
-This SDK aims to achieve higher quality reflection and GI rendering than screen space ones, using hardware ray-tracing functionality without having to set up shaders and shader resources for ray-tracing.  
+## 1. What's Kickstart RT
+This SDK aims to achieve higher quality reflection and GI rendering than traditional screen space techniques, using hardware ray-tracing functionality without having to set up shaders and shader resources for ray-tracing.  
 When implementing ray-tracing into an existing game engine, one of the biggest problems is preparing the shaders for reflection and GI rays.
 All of the countless shaders that exist in a game scene must be listed and configured. We also need to make sure that the various shader resources (ConstantBuffer, Texture, etc.) can be accessed correctly from those shaders for each material. This can be a very complex task.  
-Instead of setting up all the shaders, this SDK takes the lighting information from a rendered G-Buffer and stores the lighting information to a cache in world space.
-Therefore, the application does not need to configure shaders for ray-tracing at all.
-The SDK creates reflection and GI information by sampling the lighting information using ray-tracing internally, so lighting information for objects that are off-screen will also be sampled if it is stored in the SDK, which is the biggest difference from screen space based techniques.
+Instead of setting up all the shaders, this SDK takes the lighting information from a rendered G-Buffer and stores it in a world space cache. Therefore, the application does not need to modify any shaders for ray-tracing.
+Internally, the SDK creates reflection and GI information by sampling the lighting information using ray-tracing. This is the biggest difference from screen space based techniques as lighting information for off-screen objects will also be sampled if it is stored in the SDK.
 
 #### Is this a complete replacement for ray-traced reflection or GI?
 No, it is not.  
-First, KickStart RTX takes the lighting information from the G-Buffer and stores it in world space, but SDK doesn't take into account what components it consists of (Diffuse, Specular, Fresnel etc...). It also does not take into account the material of the surfaces.
+First, Kickstart RT takes the lighting information from the G-Buffer and stores it in world space, but the SDK doesn't take into account what components it consists of (Diffuse, Specular, Fresnel etc...). It also does not take into account the material of the surfaces.
 Any surface of material that the ray hits will be evaluated as a full Lambertian, so the lighting information from the G-Buffer will be treated as radiance. This is a major compromise, as it frees the application from having to manage the materials for ray-tracing.
-On the other hand, each pixel in the screen space, which is the starting point for ray-tracing, can be evaluated as a material by passing parameters such as specular and roughness as textures.
-In addition, if there is a sudden change in the lighting environment or object movement in the scene, the lighting information stored in the SDK will obsolete and doesn't represent lighting well. In order to update the changed lighting, multiple G-Buffers containing the new lighting information must be continuously provided to the SDK for several frames. So there is a latency here and this is the another compromise.
+On the other hand, each pixel in the screen space, which is the starting point for ray-tracing, can be evaluated as a material by passing texture parameters such as specular and roughness.
+However, if there is a sudden change in the lighting environment or object movement in the scene, the lighting information stored in the SDK may become stale and wont represent the current lighting conditions very well. In order to update the changed lighting, multiple G-Buffers containing the new lighting information must be continuously provided to the SDK for several frames. So there is a latency here and this is the another compromise.
 
 ## 2. How it works
-For detailed information of KickStart RTX, please refer to the separate document. Here's a rough idea of how it works
+For detailed information of Kickstart RT, please refer to the separate document. Here's a rough idea of how it works
 
-1. The application passes the vertex and index buffers of the geometry in the scene to the SDK so taht it builds the BVH of the scene internally.
-The SDK also receives information such as updates on geometry shapes, instance position, newly placed instances or removed, etc...  
+1. The application passes the vertex and index buffers of the geometry in the scene to the SDK so that it builds the BVH of the scene internally.
+The SDK also receives information such as updates on geometry shapes, instance position, newly placed or removed instances etc...  
 ![Slide1](https://user-images.githubusercontent.com/5753935/157593405-1a18be4e-893c-4d14-b104-773f69738ac3.png)
 
-1. The application passes the G-buffer which contains lighting along with depth and normal to the SDK.
-The SDK stores the information of the G-buffer in the lighting cache in world space. Therefore, it also receives projection matrix and view matrix information along with the G-Buffer, that are needed to reconstruct world space position.  
+1. The application passes the G-buffer containing the lighting along with depth and normal information to the SDK.
+The SDK stores the information of the G-buffer in the lighting cache in world space. It also receives the projection matrix and view matrix information along with the G-Buffer which are needed to reconstruct world space position.  
 ![Slide2](https://user-images.githubusercontent.com/5753935/157593410-c6a037ec-3d1b-4f14-a19c-9dbbf10560b4.png)
 
 1. SDK performs raytracing internally and passes Reflection and GI results to the application.
-The SDK performs raytracing based on the camera position specified by the application, renders reflection and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.  
+The SDK performs raytracing based on the camera position specified by the application and renders reflections and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.  
 ![Slide3](https://user-images.githubusercontent.com/5753935/157593412-758d200b-da90-4b69-ab25-bc75545f0dca.png)
 
 ## 3. Getting Started
 
 Kickstart RT is designed from the ground up to provide a simple interface to common implementations of ray tracing techniques used in modern games.  It provides API support in Direct3D11/12 & Vulkan.  It can be compiled to Windows or Linux platforms including ARM instruction sets.  
-Kickstart is designed to be a dynamically linked runtime library that is linked to your application at build time. We provide full source code to all parts of the library so that you may build it yourself.
+Kickstart RT is designed to be a dynamically linked runtime library that is linked to your application at build time. We provide full source code to all parts of the library so that you may build it yourself.
 In addition to browsing the sample code, we encourage you to check out the formal documentation listed here.
 - [Sample code repository (KickstartRT_Demo)](https://github.com/NVIDIAGameWorks/KickstartRT_Demo)
 - [SDK Reference](https://github.com/NVIDIAGameWorks/KickstartRT/docs)
 - [Integration Guide](https://github.com/NVIDIAGameWorks/KickstartRT/docs)
 
 #### Requirements
-The requirements to use Kickstart RT in built from source.
+The requirements to use Kickstart RT when built from source.
 
 ##### Windows
 - Cmake 3.22+  
@@ -57,14 +56,14 @@ The requirements to use Kickstart RT in built from source.
 - Windows10 SDK  
   Any recent one should be fine. Tested with : 10.0.20348.0.  
 - PIX EventMarker runtime  
-  If you want to enable perf merker in SDK’s render passes. Tested with : 1.0.220124001.
+  If you want to enable perf marker in SDK’s render passes. Tested with : 1.0.220124001.
 
 ##### Linux
 - Cmake 3.22+  
 - Vulkan SDK  
-  Should be worked with 1.2 or higher. Tested with 1.2.189.
+  Should work with 1.2 or higher. Tested with 1.2.189.
 - gcc/g++ 9.3 or above
-- Other various libs
+- Various external packages including
   - libglu1-mesa-dev
   - freeglut3-dev
   - mesa-common-dev
@@ -76,11 +75,11 @@ The requirements to use Kickstart RT in built from source.
   - libxxf86vm-dev
 
 #### GPU Requirements
-At least the SDK checks the following features that need to be supported at the initialization. It doesn’t mean that the SDK guarantees to support all GPUs that fulfills the following features.
+The SDK checks for the following feature support at initialization time. It doesn’t mean that the SDK guarantees to support all GPUs that fulfills the following features.
 
 - D3D11
   - D3D11.4  
-    Need to support ID3D11Device5 to handle fence objects. 
+    Needs to support ID3D11Device5 to handle fence objects. 
 
 - D3D12 and 11
   D3D11 uses D3D12 as a backend of the rendering, so the requirement is basically the same.
@@ -120,18 +119,19 @@ Kickstart is built using CMake, so the build instructions are pretty standard.
      - Set `PIX_EVENT_RUNTIME_SDK` environment variable with the path to the lib before configuring CMake.  
      - Set `KickstartRT_PIX_EVENT_RUNTIME_SDK_PATH` in the CMake's configuration with the path to the lib.  
 3. CMake confiture and generate projects.  
-  If you like, you can use CMake GUI to configure project files. You can set the destination folder anywhere but `build` directory just under the repository is preferred since it is already noted in `.gitignore`.   
+You can use CMake GUI to configure project files. You can set the destination folder anywhere but `build` directory just under the repository is preferred since it is already noted in `.gitignore`.   
 4. Build  
   Open the Visual Studio solution which should be generated under `build` directory and build `ALL_BUILD` and `INSTALL`.  
-  After `INSTALL`, built files will be assembled into `build/package` directory. Can then copy this package into your game engine for integration.  
+  After `INSTALL`, built files will be assembled into `build/package` directory. You can then copy this package into your game engine for integration.  
 
 ##### Linux build instructions
 
-1. Use `git clone --recursive` otherwise lots of the submodules will be missed
+1. Clone the repository recursively  
+  `git clone –recursive https://github.com/NVIDIAGameWorks/KickstartRT`
 
-2. Download and install the Vulkan SDK (Might be available with apt-get). If built from sources, remember to run the `setup_env.sh` script to set up the required environment variables.
+2. Download and install the Vulkan SDK [here](https://www.lunarg.com/vulkan-sdk/). If built from sources, remember to run the `setup_env.sh` script to set up the required environment variables.
 
-3. This has been tested with gcc 9.3 and is required for the C++17 functionality. If you have an older version of gcc installed, please update otherwise you will get compilation issues with `#include <filesystem>`
+3. Ensure gcc 9.3 is installed. This has been tested with gcc 9.3 and is required for the C++17 functionality. If you have an older version of gcc installed, please update otherwise you will get compilation issues with `#include <filesystem>`
     
     `sudo apt install gcc-9 g++-9`
 
