@@ -63,16 +63,6 @@ The requirements to use Kickstart RT when built from source.
 - Vulkan SDK  
   Should work with 1.2 or higher. Tested with 1.2.189.
 - gcc/g++ 9.3 or above
-- Various external packages including
-  - libglu1-mesa-dev
-  - freeglut3-dev
-  - mesa-common-dev
-  - libx11-dev
-  - libxrandr-dev
-  - libxinerama-dev
-  - libxcursor-dev
-  - libxi-dev
-  - libxxf86vm-dev
 
 #### GPU Requirements
 The SDK checks for the following feature support at initialization time. It doesn’t mean that the SDK guarantees to support all GPUs that fulfills the following features.
@@ -135,11 +125,7 @@ You can use CMake GUI to configure project files. You can set the destination fo
     
     `sudo apt install gcc-9 g++-9`
 
-4. There are quite a few dependencies which are required before any samples will build/run. Here is a standard list which should provide most, depending on your own setup :
-   
-   `sudo apt-get install libglu1-mesa-dev freeglut3-dev mesa-common-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxxf86vm-dev`
-
-5. Windows resource files have been emulated with some CMake magic which has restrictions when adding new shaders. The shader rc file is dynamically creating at build time, rather than build generation time, so a pre-populated resource file is included in the project which will get over-written on the first build. If a new shader is added and the project has not been built yet, then the pre-populated rc file will need updating or Kickstart RT will fail to find the new shader.
+4. Windows resource files have been emulated with some CMake magic which has restrictions when adding new shaders. The shader rc file is dynamically creating at build time, rather than build generation time, so a pre-populated resource file is included in the project which will get over-written on the first build. If a new shader is added and the project has not been built yet, then the pre-populated rc file will need updating or Kickstart RT will fail to find the new shader.
 
 ## 4. License
 
