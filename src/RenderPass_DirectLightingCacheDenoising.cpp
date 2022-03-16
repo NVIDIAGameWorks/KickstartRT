@@ -1617,6 +1617,7 @@ namespace KickstartRT_NativeLayer
 #else
 		tws;
 		cmdList;
+		resources;
 		output;
 #endif
 		return Status::OK;
