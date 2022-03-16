@@ -248,7 +248,7 @@ if (KickstartRT_SDK_WITH_Interop_DX11)
 if (KickstartRT_SDK_WITH_DX12)
     add_subdirectory(interop_d3d11)
 else()
-message("D3D11 interop layer depends on D3D12 SDK. Please enable it.")
+message(FATAL_ERROR "D3D11 interop layer depends on D3D12 SDK. Please enable it.")
 endif()
 endif()
 
