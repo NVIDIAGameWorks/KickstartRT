@@ -252,10 +252,17 @@ namespace RenderTask {
 	};
 
 	struct SpecularInput {
-		// Global metalness override
+		/**
+		* Global metalness atcs as a scalar factor for the specular value, so just 1.0 is fine in most cases.
+		* This should be changed only for debugging purpose when the specular texture is not set.
+		*/
 		float globalMetalness = 1.f;
 
-		// Specular texture is treated as a RGB texture in shader codes.
+		/**
+		* Specular texture is treated as a RGB texture in the shader codes.
+		* This is optional. If you don't set the texture, specular is set to RGB(1.0, 1.0, 1.0) in the shader code.
+		* It must be set when enabling TraceSpecularTask::demodulateSpecular.
+		*/
 		ShaderResourceTex	tex;
 	};
 
