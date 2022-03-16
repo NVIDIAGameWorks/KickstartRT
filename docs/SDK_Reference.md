@@ -45,9 +45,9 @@ After initializing the SDK, the first task in the rendering loop is to create a 
 
 After TaskContainer creation, you will add a Task to register the geometries in the scene. The registered geometries are used in the SDK to build the Acceleration Structure (BVH). Additionally, you should register a Task to render reflections and/or GI to the TaskContainer. 
 
-To render raytraced reflections and GI in KickStart RT, you will need the location of the geometries directly visible from the viewpoint, their surface normals, roughness and various values, as well as the direct light shading results. These should be drawn to the 2D render targets in a conventional deferred render pass, so simply register the drawn buffers as input data.
+To render raytraced reflections and GI in KickStart RT, you will need the location of the geometries directly visible from the viewpoint, their surface normals, roughness and various values, as well as the direct light shading results. These things are usually found in a regular GBuffer already, so you can simply register the drawn buffers as input data, or, you may need some simple conversion steps to adjust formats of the buffers.
 
-Next, the application passes the TaskContainer, along with a command list, to the SDK to build the rendering commands into it.  This command list will build the acceleration structure based on the input data and performs ray tracing to draw the output to the specified render targets.
+Next, the application passes the TaskContainer, along with an opened command list, to the SDK to build the rendering commands into it. This command list will build the acceleration structure based on the input data and performs ray tracing to draw the output to the specified render targets. Notice that although the SDK sets its own descriptor heap and buffers, it doesn't open and close the provided command list. It is encouraged that users provide a dedicated command list to the SDK after opening it, and then close it immediately after returning it from the SDK to avoid unnecessary state leaks.
 
 In order to integrate the result into a final render, the application will need to add a rendering path to composite the reflection and/or GI rendering results written by the command list from the SDK.
 
