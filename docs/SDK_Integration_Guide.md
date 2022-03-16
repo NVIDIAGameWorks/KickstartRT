@@ -9,7 +9,7 @@
 
 This guide aims to provide insight and recommendations for integrating
 the Kickstart RT SDK into a game. It is expected that the reader has
-read the [SDK Reference Guide](SDK_Reference.md) to familiarize themselves with the
+read the repo [Readme](../README.md) and the [SDK Reference Guide](SDK_Reference.md) to familiarize themselves with the
 key algorithmic details of the SDK.
 
 ![Overview Image](https://user-images.githubusercontent.com/100689874/158652196-92878b8f-65e6-4df3-be67-3bc4fe2da373.PNG)
