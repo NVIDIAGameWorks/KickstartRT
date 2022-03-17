@@ -209,7 +209,7 @@ namespace KickstartRT_NativeLayer
 		cb.m_depthType = (uint32_t)input->depth.type;
 
 		cb.m_averageWindow = std::clamp<float>(input->averageWindow, 1.f, 1.0e3);
-		cb.m_fastAccum = input->enableFastAccumlation ? 1 : 0;
+		cb.m_padding_u1 = 0;
 		cb.m_padding[0] = cb.m_padding[1] = 0.f;
 
 		cb.m_clipToViewMatrix = input->clipToViewMatrix;

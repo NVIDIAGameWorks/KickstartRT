@@ -395,11 +395,6 @@ namespace RenderTask {
 		//< Longer average window will converge values slowly but more stable than shorter average window. 
 		float				averageWindow = 200.f;
 
-		// If enableFastAccumlation is enabled the averageWindow parameter will be ignored the first time writing
-		// to the tile after the initial a clear operation.
-		// This reduces lighting cache lag when an instance is just spawned.
-		bool				enableFastAccumlation = true;
-
 		Math::Float_4x4		clipToViewMatrix = Math::Float_4x4::Identity();	// (Pos_View) = (Pos_CliP) * (M)
 		Math::Float_4x4		viewToWorldMatrix = Math::Float_4x4::Identity();	// (Pos_World) = (Pos_View) * (M), in other words, (Cam Pos) = (0,0,0,1) * (M)
 		// Switch between DXR1.1 inline raytracing via CS, or DXR1.0 tracing from RayGen shaders.

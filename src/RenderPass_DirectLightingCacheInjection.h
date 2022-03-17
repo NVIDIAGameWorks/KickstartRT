@@ -62,7 +62,7 @@ namespace KickstartRT_NativeLayer
 			uint32_t    m_depthType;
 
 			float		m_averageWindow;
-			uint32_t    m_fastAccum;
+			uint32_t    m_padding_u1;
 			float		m_padding[2];
 
 			Math::Float_4x4	m_clipToViewMatrix;

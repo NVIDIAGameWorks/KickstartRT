@@ -42,7 +42,7 @@ struct CB_Injection
     uint    m_depthType;
 
     float   m_averageWindow;
-	uint    m_fastAccum;
+	uint    m_padding_u1;
     float2  m_padding;
 
     float4x4	m_clipToViewMatrix;
@@ -97,7 +97,7 @@ void hit(uint primitiveIndex, float2 barycentrics, uint instanceIndex, float ray
 
 		LightCache::Result res = LightCache::QueryCache(query);
 
-		float EMARatio = CB.m_fastAccum && res.hasClearTag ? 1.f : 2.0 / (1.0 + CB.m_averageWindow);
+		float EMARatio = res.hasClearTag ? 1.f : 2.0 / (1.0 + CB.m_averageWindow);
 		float3 newData = lerp(res.tileData, payload.Col, EMARatio);
 
 		LightCache::Store(
