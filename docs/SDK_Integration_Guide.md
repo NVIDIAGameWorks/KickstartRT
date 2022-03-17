@@ -248,7 +248,6 @@ renderTask.viewToWorldMatrix = cameraView.getViewToWorldF();
 
 // Tuning parameters
 renderTask.averageWindow = c_AccumulationWindow;
-renderTask.enableFastAccumlation = true;
 renderTask.useInlineRT = false;
 
 // Schedule the task
@@ -782,13 +781,7 @@ struct DirectLightingInjectionTask : public Task {
 
     //< SDK accumulates direct lighting information into allocated tiles on the surfaces. 
     //< Longer average window will converge values slowly but more stable than shorter average window. 
-    Float    	averageWindow = 200.f;
-
-    // If enableFastAccumlation is enabled the averageWindow parameter will be ignored the first time writing
-    // to the tile after the initial a clear operation.
-    // This reduces lighting cache lag when an instance is just spawned.
-    Bool    	enableFastAccumlation = true;
-
+    float    	averageWindow = 200.f;
     ...
 };
 ```
@@ -892,8 +885,7 @@ instance for that LOD should be destroyed and a new instance created for
 the new LOD. This ensures there is only 1 LOD per object in the TLAS at
 a time.
 
-The new LOD will have a cold direct lighting cache but if fast
-accumulation is enabled in the lighting input pass, then the cold cache
+The new LOD will have a cold direct lighting cache but this
 will be updated to full intensity as soon as it is visible in the input
 buffer.
 
