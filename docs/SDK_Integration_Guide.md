@@ -356,6 +356,14 @@ Multiple tasks can be scheduled against a container before it is built
 and we would recommend a single task container to be used for the light
 injection, RT output and denoising.
 
+### Specular and diffuse reflections material
+
+Specular reflections are calculated using very common BRDF based on specular microfacet model with GG-X distribution and uses an efficient VNDF method is used.
+
+There are two diffuse BRDFs to chose from. Default one is simple Lambertian BRDF, and second option is Frostbite's normalized version of disney diffuse BRDF.
+
+The downside of using Lambertian BRDF is that energy conservation is not preserved when it is combined with our specular BRDF. This means, more light can be reflected from the surface than is received. Many rendering engines solve this when composing final image by modifying indirect diffuse and specular lighting to preserve energy conservation. If this is not the case, KickstartRT provides the option to use Frostbite's diffuse BRDF. Note that this BRDF requires the roughness texture to be passed into diffuse reflection pass as well. This ensures that energy conservation is preserved out of the box, and final pixel value can be simply calculated as a sum of `direct lighting + indirect diffuse + indirect specular`.
+
 ### Transparent Reflections
 
 Transparent reflections can be achieved by creating another specular
