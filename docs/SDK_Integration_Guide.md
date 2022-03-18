@@ -358,7 +358,7 @@ injection, RT output and denoising.
 
 ### Specular and diffuse reflections material
 
-Specular reflections are calculated using very common BRDF based on specular microfacet model with GG-X distribution and uses an efficient VNDF method.
+Specular reflections are calculated using very common BRDF based on specular microfacet model with GG-X distribution and uses an efficient VNDF method for sampling.
 
 There are two diffuse BRDFs to chose from. Default one is simple Lambertian BRDF, and second option is Frostbite's normalized version of disney diffuse BRDF.
 
