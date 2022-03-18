@@ -40,8 +40,8 @@ Kickstart RT is designed from the ground up to provide a simple interface to com
 Kickstart RT is designed to be a dynamically linked runtime library that is linked to your application at build time. We provide full source code to all parts of the library so that you may build it yourself.
 In addition to browsing the sample code, we encourage you to check out the formal documentation listed here.
 - [Sample code repository (KickstartRT_Demo)](https://github.com/NVIDIAGameWorks/KickstartRT_Demo)
-- [SDK Reference](https://github.com/NVIDIAGameWorks/KickstartRT/docs)
-- [Integration Guide](https://github.com/NVIDIAGameWorks/KickstartRT/docs)
+- [SDK Reference](docs/SDK_Integration_Guide.md)
+- [Integration Guide](docs/SDK_Integration_Guide.md)
 
 #### Requirements
 The requirements to use Kickstart RT when built from source.
