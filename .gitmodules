@@ -3,4 +3,4 @@
 	url = https://github.com/jarro2783/cxxopts.git
 [submodule "thirdparty/RayTracingDenoiser"]
 	path = thirdparty/RayTracingDenoiser
-	url = git@github.com:NVIDIAGameWorks/RayTracingDenoiser.git
+	url = https://github.com/NVIDIAGameWorks/RayTracingDenoiser.git
