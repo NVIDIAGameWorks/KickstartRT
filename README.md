@@ -1,5 +1,7 @@
 # Kickstart RT
 
+update from Lab
+
 1. [What's Kickstart RT](#1-whats-kickstart-rt)
 2. [How it works](#2-how-it-works)
 3. [Getting Started](#3-getting-started)
