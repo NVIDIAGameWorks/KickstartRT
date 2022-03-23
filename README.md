@@ -1,6 +1,7 @@
 # Kickstart RT
 
 update from Lab
+update from GitHub
 
 1. [What's Kickstart RT](#1-whats-kickstart-rt)
 2. [How it works](#2-how-it-works)
