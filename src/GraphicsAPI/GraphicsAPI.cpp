@@ -477,13 +477,19 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
             return false;
         }
 
+        auto flags = heapEntry.m_descHeap->GetDesc().Flags;
+
         retAllocationInfo->m_numDescriptors = nbEntryToAllocate;
         retAllocationInfo->m_incrementSize = heapEntry.m_incrementSize;
         retAllocationInfo->m_hCPU = heapEntry.m_descHeap->GetCPUDescriptorHandleForHeapStart();
-        retAllocationInfo->m_hGPU = heapEntry.m_descHeap->GetGPUDescriptorHandleForHeapStart();
+        if (flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
+            retAllocationInfo->m_hGPU = heapEntry.m_descHeap->GetGPUDescriptorHandleForHeapStart();
+        else
+            retAllocationInfo->m_hGPU.ptr = (UINT64)-1;
 
         retAllocationInfo->m_hCPU.ptr += heapEntry.m_incrementSize * heapEntry.m_currentOffset;
-        retAllocationInfo->m_hGPU.ptr += heapEntry.m_incrementSize * heapEntry.m_currentOffset;
+        if (flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
+            retAllocationInfo->m_hGPU.ptr += heapEntry.m_incrementSize * heapEntry.m_currentOffset;
 
         heapEntry.m_currentOffset += nbEntryToAllocate;
 
