@@ -484,6 +484,8 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         retAllocationInfo->m_hCPU = heapEntry.m_descHeap->GetCPUDescriptorHandleForHeapStart();
         if (flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
             retAllocationInfo->m_hGPU = heapEntry.m_descHeap->GetGPUDescriptorHandleForHeapStart();
+        else
+            retAllocationInfo->m_hGPU.ptr = (UINT64)-1;
 
         retAllocationInfo->m_hCPU.ptr += heapEntry.m_incrementSize * heapEntry.m_currentOffset;
         if (flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
