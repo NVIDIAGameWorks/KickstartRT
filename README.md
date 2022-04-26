@@ -130,4 +130,5 @@ You can use CMake GUI to configure project files. You can set the destination fo
 ## 4. License
 
 This project is under the MIT License, see the LICENSE.txt file for details. Also, you may need to check licenses for dependent components.
+All contributors will need to sign for NVDIIA Contribution License Agreement, which can be done with GitHub actions when submitting a pull request.
 
