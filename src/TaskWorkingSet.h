@@ -55,7 +55,7 @@ namespace KickstartRT_NativeLayer
 
 		PersistentWorkingSet* const			m_persistentWorkingSet;
 
-		GraphicsAPI::DescriptorHeap			m_CBVSRVUAVHeap;
+		std::unique_ptr<GraphicsAPI::IDescriptorHeap>		m_CBVSRVUAVHeap;
 		VolatileConstantBuffer				m_volatileConstantBuffer;
 
 	public:
@@ -97,7 +97,7 @@ namespace KickstartRT_NativeLayer
 			}
 
 			// Setting fws desc heap.
-			m_commandList->SetDescriptorHeap(&m_set->m_CBVSRVUAVHeap);
+			m_commandList->SetDescriptorHeap(m_set->m_CBVSRVUAVHeap.get());
 		};
 
 		~TaskWorkingSetCommandList()

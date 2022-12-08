@@ -30,6 +30,72 @@
 #error "NotDefined: KickstartRT_DECLSPEC"
 #endif
 
+namespace Component {
+	/**
+	* A simple implementation of a vector class that can be shared with the SDK and an application.
+	* It always fills emply elements with a valid type:T element for simplicity.
+	*/
+	template <typename T>
+	class KickstartRT_DECLSPEC_INL Vector
+	{
+	private:
+		T* m_data;
+		size_t m_capacity;
+		size_t m_size;
+
+	public:
+		Vector();
+		~Vector();
+
+		// move ctor
+		Vector(Vector&& rightValue) noexcept
+		{
+			m_data = rightValue.m_data;
+			m_capacity = rightValue.m_capacity;
+			m_size = rightValue.m_size;
+
+			rightValue.m_data = nullptr;
+			rightValue.m_capacity = 0;
+			rightValue.m_size = 0;
+		}
+
+		// move op
+		Vector& operator=(Vector&& other);
+
+		void reserve(size_t newCapacity);
+
+		void resize(size_t newSize);
+
+		// copy op
+		Vector& operator=(const Vector& other);
+
+		void push_back(T newElm);
+
+		size_t size() const noexcept
+		{
+			return m_size;
+		}
+
+		const T* const data() const noexcept
+		{
+			return m_data;
+		}
+
+		T* data() noexcept
+		{
+			return m_data;
+		}
+
+		T& operator[](size_t idx) noexcept { return *(m_data + idx); };
+		const T& operator[](size_t idx) const noexcept { return *(m_data + idx); };
+
+		T* begin() noexcept { return m_data + 0; };
+		T* end() noexcept { return m_data + m_size; };
+		const T* const begin() const noexcept { return m_data + 0; };
+		const T* const end() const noexcept { return m_data + m_size; };
+	};
+};
+
 /**
 * A namespace to control output messages from the SDK. 
 */
@@ -66,6 +132,21 @@ namespace Log
 	KickstartRT_DECLSPEC_INL Status SetDefaultMessageProc(bool state);
 };
 
+/**
+* A handle to keep and identify geometry which represents a bottom level acceleration structure (BLAS).
+* SDK holds corresponded GPU resource and some sates while the handle is valid and live. ExecuteContext creates and destroys it.
+* This handle is required to schedule various kind of BVH tasks defined below.
+* Users need to maintain the lifetime of the handle and properly destroy it when it doen't need anymore to optimize VRAM usage.
+*/
+enum class GeometryHandle : uint64_t { Null = 0 };
+
+/**
+* A handle to keep and identify an instance of a geometry which represents an instance of top level acceleration structure (TLAS).
+* An instance is participating in the scene while the handle is valid and live. ExecuteContext creates and destroys it.
+* This handle is required to schedule various kind of BVH tasks defined below.
+* Users need to maintain the lifetime of the handle and properly destroy it when it doesn't need anymore to optimize TLAS.
+*/
+enum class InstanceHandle : uint64_t { Null = 0 };
 
 /**
 * A handle to keep and identify denoising context.
@@ -111,6 +192,20 @@ struct DenoisingContextInput {
 	 * NRD_Reblur   - Supported signal types: Specular, Diffuse, SpecularAndDiffuse, DiffuseOcclusion
 	 * NRD_Relax    - Supported signal types: Specular, Diffuse, SpecularAndDiffuse, DiffuseOcclusion
 	 * NRD_Sigma    - Supported signal types: Shadow, MultiShadow
+	 * 
+	 * Notice that when using NRD_Reblur, the filtered result will be in YCoCg color space and KickStartRT doesn't insert an extra render pass to simply decode it.
+	 * So, applications need to decode it before using.
+	 * NRD has prvided a utility function, REBLUR_BackEnd_UnpackRadianceAndNormHitDist() to decode, but for simplicity,
+	 * you can also use the following function instead to decode.
+	 * float3 YCoCgToLinear(const float3 color )
+	 * {
+	 *   float t = color.x - color.z;
+	 * 	 float3 r;
+	 * 	 r.y = color.x + color.z;
+	 * 	 r.x = t + color.y;
+	 * 	 r.z = t - color.y;
+	 * 	 return max( r, 0.0 );
+	 * 	}
 	 */
 	enum class DenoisingMethod : uint32_t {
 		NRD_Reblur = 0,
@@ -362,6 +457,7 @@ namespace RenderTask {
 			Unknown = 0,
 
 			DirectLightInjection,
+			DirectLightTransfer,
 
 			TraceSpecular,
 			TraceDiffuse,
@@ -394,6 +490,9 @@ namespace RenderTask {
 		//< SDK accumulates direct lighting information into allocated tiles on the surfaces. 
 		//< Longer average window will converge values slowly but more stable than shorter average window. 
 		float				averageWindow = 200.f;
+		//< The injection pass will trace and inject for every injectionResolutionStride'th pixel in directLighting texture
+		//< Note: must be non-zero
+		uint32_t			injectionResolutionStride = 4; 
 
 		Math::Float_4x4		clipToViewMatrix = Math::Float_4x4::Identity();	// (Pos_View) = (Pos_CliP) * (M)
 		Math::Float_4x4		viewToWorldMatrix = Math::Float_4x4::Identity();	// (Pos_World) = (Pos_View) * (M), in other words, (Cam Pos) = (0,0,0,1) * (M)
@@ -402,6 +501,21 @@ namespace RenderTask {
 
 		DepthInput			depth;
 		ShaderResourceTex	directLighting;	// RGBch must have direct lighting result.
+	};
+
+	/**
+	* This task is to peform the light injection in to the world space and store the light information on the surface elements, "Warped Barycentric Storage" or "Mesh Color".
+	* The typical usecase is to run this before all tracing tasks to perticipate the current screen space direct lighting buffer to the world space.
+	*/
+	struct DirectLightTransferTask : public Task {
+		DirectLightTransferTask() : Task(Task::Type::DirectLightTransfer) {};
+
+		//< The instance to transfer radiance _to_
+		//< Target instance geometry must have allowLightTransferTarget=true
+		InstanceHandle		target;
+
+		// Switch between DXR1.1 inline raytracing via CS, or DXR1.0 tracing from RayGen shaders.
+		bool				useInlineRT = false;
 	};
 
 	/*=========================================================================
@@ -428,6 +542,8 @@ namespace RenderTask {
 		HalfResolutionMode	halfResolutionMode = HalfResolutionMode::OFF;
 
 		RayOffset			rayOffset;
+
+		float				maxRayLength = 3.402823466e+38F;
 
 		Math::Float_4x4		viewToClipMatrix = Math::Float_4x4::Identity();		// (Pos_View)	= (Pos_CliP) * (M)
 		Math::Float_4x4		clipToViewMatrix = Math::Float_4x4::Identity();		// (Pos_View)	= (Pos_CliP) * (M)
@@ -800,23 +916,6 @@ namespace RenderTask {
 	};
 };
 
-
-/**
-* A handle to keep and identify geometry which represents a bottom level acceleration structure (BLAS).
-* SDK holds corresponded GPU resource and some sates while the handle is valid and live. ExecuteContext creates and destroys it.
-* This handle is required to schedule various kind of BVH tasks defined below.
-* Users need to maintain the lifetime of the handle and properly destroy it when it doen't need anymore to optimize VRAM usage.
-*/
-enum class GeometryHandle : uint64_t { Null = 0 };
-
-/**
-* A handle to keep and identify an instance of a geometry which represents an instance of top level acceleration structure (TLAS).
-* An instance is participating in the scene while the handle is valid and live. ExecuteContext creates and destroys it.
-* This handle is required to schedule various kind of BVH tasks defined below.
-* Users need to maintain the lifetime of the handle and properly destroy it when it doesn't need anymore to optimize TLAS.
-*/
-enum class InstanceHandle : uint64_t { Null = 0 };
-
 /**
 * This is a namespace for all tasks to process geometries and instances including BVH processing.
 * A list of BVH tasks are interpreted to a set of dispatches into a command list to pre-process geometries, allocate direct lighting caches, and BLAS, TLAS buildings.
@@ -834,10 +933,25 @@ namespace BVHTask
 		Update = 1,
 	};
 
+	enum class InstanceInclusionMask : uint8_t
+	{
+		None								= 0u,
+
+		// Instances with this property will get light applied in direct ligjht injection
+		DirectLightInjectionTarget			= 1u << 0u,
+
+		// Instances with this mask may be hit during light transfer operation.
+		LightTransferSource					= 1u << 1u,
+		
+		// These instances may be hit during tracing operations
+		VisibleInRT							= 1u << 2u,
+
+		Default = DirectLightInjectionTarget | VisibleInRT
+	};
+
 	/**
 	* This is a structure to provide information to SDK when registering a geometry.
-	* Basically, it consisted input vertex and indices buffers to represent an object with polygons.
-	* It also has some additional information needed when building direct lighting cache and BLAS.
+	* This structure holds information needed when building direct lighting cache and BLAS in addition to the polygon mesh information stored in the array of GeometryComponentInput.
 	*/
 	struct GeometryInput {
 		enum class Type : uint32_t
@@ -869,7 +983,7 @@ namespace BVHTask
 			PreferNone,
 		};
 
-		const wchar_t* name = nullptr;
+		const wchar_t*			name = nullptr;
 
 		/** 
 		* Enabling this flag will skip surfel allocation calculation and directly map each surfel to each polygon.
@@ -877,20 +991,22 @@ namespace BVHTask
 		* The threshold value is set by directTileMappingThreshold.
 		* This is only valid with SurfelType::TileCache.
 		*/
-		bool				forceDirectTileMapping = false;	
+		bool					forceDirectTileMapping = false;	
 
 		/**
 		* The threshold value to control direct tile mapping mode described above.
 		*/
-		float				directTileMappingThreshold = 0.7f; 
+		float					directTileMappingThreshold = 0.7f; 
 
 		/**
 		* Set true when a geometry is planned to be updated. Dynamic and Static geometries are allocated in different memory pool to avoid fragmentations.
 		*/
 		bool					allowUpdate = false;
-		bool					useTransform = false;
-		Math::Float_3x4			transform = Math::Float_3x4::Identity();
 
+		/**
+		* Set true when a geometry might get used for light cache transfer operation. Enabling may require more memory. Only valid with SurfelType::TileCache. 
+		*/
+		bool					allowLightTransferTarget = false;
 
 		/**
 		* When allocating surfels, SDK tries to allocate them along with the tile unit length.
@@ -909,21 +1025,34 @@ namespace BVHTask
 		SurfelType				surfelType = SurfelType::MeshColors;
 		BuildHint				buildHint = BuildHint::Auto;
 
-		VertexBufferInput	vertexBuffer;
-		IndexBufferInput	indexBuffer;
-
-		/** 
-		* This is an optional parameter to optimize VRAM usage for copies of vertex and index buffer in SDK.
-		* SDK copies vertex and index buffer for each geometry once when building BLAS.
-		* If users provides a large vertex buffer and an index buffer which refers few vertices,
-		* that will result in an inefficient VRAM allocation because SDK has to copy the entire vertex buffer for few primitives.
-		* This parameter is to limit the region of vertex buffer which is actually being used by this geometry, to make an efficient copy of vertex buffer.
+		/**
+		* This structure represents a chunk of polygon mesh which consists of a pair of index and vertex buffers.
+		* The array of GeometryComponent will be merged as a single BLAS.
+		* Its resource life-time, show-hide status and SRT matrix when placing it into the scene are shared with all components.
+		* If you want to handle them separately, you need to preare saparete GeometryInputs.
 		*/
-		struct {
-			bool					isEnabled = false;
-			uint32_t				minIndex = 0;
-			uint32_t				maxIndex = 0;
-		} indexRange;
+		struct GeometryComponent {
+			bool				useTransform = false;
+			Math::Float_3x4		transform = Math::Float_3x4::Identity();
+
+			VertexBufferInput	vertexBuffer;
+			IndexBufferInput	indexBuffer;
+
+			/**
+			* This is an optional parameter to optimize VRAM usage for copies of vertex and index buffer in SDK.
+			* SDK copies vertex and index buffer for each geometry once when building BLAS.
+			* If users provides a large vertex buffer and an index buffer which refers few vertices,
+			* that will result in an inefficient VRAM allocation because SDK has to copy the entire vertex buffer for few primitives.
+			* This parameter is to limit the region of vertex buffer which is actually being used by this geometry, to make an efficient copy of vertex buffer.
+			*/
+			struct {
+				bool					isEnabled = false;
+				uint32_t				minIndex = 0;
+				uint32_t				maxIndex = 0;
+			} indexRange;
+		};
+
+		Component::Vector<GeometryComponent>		components;
 	};
 
 	/**
@@ -932,11 +1061,12 @@ namespace BVHTask
 	* by setting a 4x3 matrix and refering a GeometryHandle which represents a BLAS.
 	*/
 	struct InstanceInput {
-		const wchar_t* name = nullptr;
-		Math::Float_3x4		transform = Math::Float_3x4::Identity();
-		GeometryHandle		geomHandle = GeometryHandle::Null;
-
-		float				initialTileColor[3] = { 0.f, 0.f, 0.f };
+		const wchar_t*			name = nullptr;
+		Math::Float_3x4			transform = Math::Float_3x4::Identity();
+		GeometryHandle			geomHandle = GeometryHandle::Null;
+		InstanceInclusionMask	instanceInclusionMask = InstanceInclusionMask::Default;
+		bool					participatingInTLAS = true;
+		float					initialTileColor[3] = { 0.f, 0.f, 0.f };
 	};
 
 	/**

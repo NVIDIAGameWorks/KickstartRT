@@ -78,7 +78,7 @@ namespace KickstartRT_NativeLayer
 		return Status::OK;
 	}
 
-	Status SharedBuffer::DoClear(GraphicsAPI::Device* dev, GraphicsAPI::CommandList* cmdList, GraphicsAPI::DescriptorHeap* currentGPUDescHeap)
+	Status SharedBuffer::DoClear(GraphicsAPI::Device* dev, GraphicsAPI::CommandList* cmdList, GraphicsAPI::IDescriptorHeap* currentGPUDescHeap)
 	{
 		(void)dev; (void)currentGPUDescHeap;
 

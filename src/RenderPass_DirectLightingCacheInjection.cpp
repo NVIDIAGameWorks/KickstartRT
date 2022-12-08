@@ -73,10 +73,37 @@ namespace KickstartRT_NativeLayer
 			m_rootSignature.SetName(DebugName(L"RP_DirectLightingCacheInjection"));
 		}
 
+		// RootSig for Transfer_rt_LIB / Transfer_rt_CS
+		{
+			// set 1 [CB, SRV, SRV]
+			{
+				m_descTableLayoutTransfer1.AddRange(GraphicsAPI::DescriptorHeap::Type::Cbv, 0, 1, 0); // b0, cb
+				m_descTableLayoutTransfer1.AddRange(GraphicsAPI::DescriptorHeap::Type::TypedBufferUav, 0, 1, 0); //u0, indexvertex.
+				m_descTableLayoutTransfer1.SetAPIData(dev);
+			}
+
+			// set 2 [AS, UAV ...]
+			{
+				m_descTableLayoutTransfer2.AddRange(GraphicsAPI::DescriptorHeap::Type::AccelerationStructureSrv, 0, 1, 1); // t0, space1 TLAS
+				m_descTableLayoutTransfer2.AddRange(GraphicsAPI::DescriptorHeap::Type::TypedBufferUav, 0, 1, 1); // u0, space1 TileTable
+				m_descTableLayoutTransfer2.AddRange(GraphicsAPI::DescriptorHeap::Type::TypedBufferUav, 1, -pws->m_unboundDescTableUpperbound, 1); //u1 ~ space1, tileIndex, tileBuffer ... 40000 is the upper bound of the array in VK.
+				m_descTableLayoutTransfer2.SetAPIData(dev);
+			}
+
+			std::vector<GraphicsAPI::DescriptorTableLayout*> tableLayouts = { &m_descTableLayoutTransfer1 , &m_descTableLayoutTransfer2 };
+			if (!m_rootSignatureTransfer.Init(dev, tableLayouts)) {
+				Log::Fatal(L"Failed to create rootSignature");
+				return Status::ERROR_FAILED_TO_INIT_RENDER_PASS;
+			}
+			m_rootSignatureTransfer.SetName(DebugName(L"RP_DirectLightingCacheTransfer"));
+		}
+
 		{
 			std::filesystem::path libPath(L"DirectLightingCache/Injection_rt_LIB.hlsl");
 			std::filesystem::path csPath(L"DirectLightingCache/Injection_rt_CS.hlsl");
 			std::filesystem::path csClearPath(L"DirectLightingCache/Injection_Clear_CS.hlsl");
+			std::filesystem::path libTransferPath(L"DirectLightingCache/Transfer_rt_LIB.hlsl");
+			std::filesystem::path csTransferPath(L"DirectLightingCache/Transfer_rt_CS.hlsl");
 
 			auto RegisterShader = [&sf](
 				const std::wstring& fileName, const std::wstring& entryName, const std::wstring& shaderName,
@@ -132,6 +159,23 @@ namespace KickstartRT_NativeLayer
 
 					m_shaderTable = itr;
 				}
+				if (m_enableInlineRaytracing)
+				{
+					auto [sts, itr] = RegisterShader(csTransferPath.wstring(), L"main", DebugName(L"RP_DirectLightingCacheTransfer"),
+						ShaderFactory::ShaderType::Enum::SHADER_COMPUTE, defines, m_rootSignatureTransfer);
+					if (sts != Status::OK)
+						return Status::ERROR_FAILED_TO_INIT_RENDER_PASS;
+
+					m_psoTransfer = itr;
+				}
+				{
+					auto [sts, itr] = RegisterShader(libTransferPath.wstring(), L"main", DebugName(L"RP_DirectLightingCacheTransfer"),
+						ShaderFactory::ShaderType::Enum::SHADER_RAY_GENERATION, defines, m_rootSignatureTransfer);
+					if (sts != Status::OK)
+						return Status::ERROR_FAILED_TO_INIT_RENDER_PASS;
+
+					m_shaderTableTransfer = itr;
+				}
 			}
 		}
 
@@ -139,7 +183,7 @@ namespace KickstartRT_NativeLayer
 	};
 
 	// need to set root sig and desc table #1 before calling this function.
-	Status RenderPass_DirectLightingCacheInjection::Dispatch(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* registry, const RenderTask::DirectLightingInjectionTask *input)
+	Status RenderPass_DirectLightingCacheInjection::DispatchInject(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* registry, const RenderTask::DirectLightingInjectionTask *input)
 	{
 		PersistentWorkingSet* pws(tws->m_persistentWorkingSet);
 		auto& dev(pws->m_device);
@@ -180,7 +224,7 @@ namespace KickstartRT_NativeLayer
 		}
 
 		GraphicsAPI::DescriptorTable descTable;
-		if (!descTable.Allocate(&tws->m_CBVSRVUAVHeap, &m_descTableLayout1)) {
+		if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), &m_descTableLayout1)) {
 			Log::Fatal(L"Faild to allocate a portion of desc heap.");
 			return Status::ERROR_INTERNAL;
 		}
@@ -189,6 +233,9 @@ namespace KickstartRT_NativeLayer
 		void* cbPtrForWrite;
 		RETURN_IF_STATUS_FAILED(tws->m_volatileConstantBuffer.Allocate(sizeof(CB), &cbv, &cbPtrForWrite));
 
+		const uint32_t threadCountX = GraphicsAPI::ROUND_UP(input->viewport.width, input->injectionResolutionStride);
+		const uint32_t threadCountY = GraphicsAPI::ROUND_UP(input->viewport.height, input->injectionResolutionStride);
+
 		CB cb = {};
 		cb.m_Viewport_TopLeftX = input->viewport.topLeftX;
 		cb.m_Viewport_TopLeftY = input->viewport.topLeftY;
@@ -196,9 +243,8 @@ namespace KickstartRT_NativeLayer
 		cb.m_Viewport_Height = input->viewport.height;
 		cb.m_Viewport_MinDepth = input->viewport.minDepth;
 		cb.m_Viewport_MaxDepth = input->viewport.maxDepth;
-
-		cb.m_CTA_Swizzle_GroupDimension_X = GraphicsAPI::ROUND_UP(input->viewport.width, m_threadDim_XY[0]);
-		cb.m_CTA_Swizzle_GroupDimension_Y = GraphicsAPI::ROUND_UP(input->viewport.height, m_threadDim_XY[1]);
+		cb.m_CTA_Swizzle_GroupDimension_X = GraphicsAPI::ROUND_UP(threadCountX, m_threadDim_XY[0]);
+		cb.m_CTA_Swizzle_GroupDimension_Y = GraphicsAPI::ROUND_UP(threadCountY, m_threadDim_XY[1]);
 
 		{
 			Math::Float_4 originf = Math::Transform(input->viewToWorldMatrix, { 0.f, 0.f, 0.f, 1.f });
@@ -209,8 +255,22 @@ namespace KickstartRT_NativeLayer
 		cb.m_depthType = (uint32_t)input->depth.type;
 
 		cb.m_averageWindow = std::clamp<float>(input->averageWindow, 1.f, 1.0e3);
-		cb.m_padding_u1 = 0;
-		cb.m_padding[0] = cb.m_padding[1] = 0.f;
+
+		cb.m_subPixelJitterOffsetX = 0;
+		cb.m_subPixelJitterOffsetY = 0;
+
+		cb.m_strideX = input->injectionResolutionStride;
+		cb.m_strideY = input->injectionResolutionStride;
+
+
+		std::hash<uint64_t> hash_f;
+		const size_t randomOffset	= hash_f(s_seed++);
+
+		const size_t offsetCounts = cb.m_strideX * cb.m_strideY;
+		const uint32_t randomOffsetIndex = (uint32_t)(randomOffset % (offsetCounts));
+
+		cb.m_strideOffsetX = randomOffsetIndex % cb.m_strideX;
+		cb.m_strideOffsetY = randomOffsetIndex / cb.m_strideX;
 
 		cb.m_clipToViewMatrix = input->clipToViewMatrix;
 		cb.m_viewToWorldMatrix = input->viewToWorldMatrix;
@@ -250,7 +310,79 @@ namespace KickstartRT_NativeLayer
 		else {
 			// VK uses different binding point.
 			cmdList->SetRayTracingRootDescriptorTable(&m_rootSignature, 0, tableArr.data(), tableArr.size());
-			shaderTableRT->DispatchRays(cmdList, input->viewport.width, input->viewport.height);
+			shaderTableRT->DispatchRays(cmdList, threadCountX, threadCountY);
+		}
+
+		return Status::OK;
+	};
+
+	// need to set root sig and desc table #1 before calling this function.
+	Status RenderPass_DirectLightingCacheInjection::DispatchTransfer(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* , const RenderTask::DirectLightTransferTask* input, const TransferParams& params)
+	{
+		PersistentWorkingSet* pws(tws->m_persistentWorkingSet);
+		auto& dev(pws->m_device);
+
+		if (input->useInlineRT && (!m_enableInlineRaytracing)) {
+			Log::Fatal(L"Inline raytracing is disabled at the SDK initialization.");
+			return Status::ERROR_INVALID_PARAM;
+		}
+		if ((!input->useInlineRT) && (!m_enableShaderTableRaytracing)) {
+			Log::Fatal(L"ShaderTable raytracing is disabled at the SDK initialization.");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		ShaderTableRT* shaderTableRT = nullptr;
+		if (input->useInlineRT) {
+			// set PSO.
+			cmdList->SetComputePipelineState(m_psoTransfer->GetCSPSO(pws));
+		}
+		else {
+			// set rtPSO.
+			shaderTableRT = m_shaderTableTransfer->GetShaderTableRT(pws, cmdList);
+			cmdList->SetRayTracingPipelineState(shaderTableRT->m_rtPSO.get());
+		}
+
+		GraphicsAPI::DescriptorTable descTable;
+		if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), &m_descTableLayoutTransfer1)) {
+			Log::Fatal(L"Faild to allocate a portion of desc heap.");
+			return Status::ERROR_INTERNAL;
+		}
+
+		GraphicsAPI::ConstantBufferView cbv;
+		void* cbPtrForWrite;
+		RETURN_IF_STATUS_FAILED(tws->m_volatileConstantBuffer.Allocate(sizeof(CB_Transfer), &cbv, &cbPtrForWrite));
+
+		BVHTask::Instance* targetInstance = BVHTask::Instance::ToPtr(input->target);
+		// BVHTask::Instance* sourceInstance = BVHTask::Instance::ToPtr(input->source);
+
+		const uint32_t triangleCount = targetInstance->m_numberOfTiles;
+
+		CB_Transfer cb = {};
+		cb.m_triangleCount = triangleCount;
+		cb.m_targetInstanceIndex = params.targetInstanceIndex;
+		cb.m_dstVertexBufferOffsetIdx = (uint32_t)(targetInstance->m_geometry->m_vertexBufferOffsetInBytes / sizeof(uint32_t));
+		cb.m_targetInstanceTransform = targetInstance->m_input.transform;
+
+		memcpy(cbPtrForWrite, &cb, sizeof(cb));
+
+		{
+			descTable.SetCbv(&dev, 0, 0, &cbv); // Layout1: [0]
+		}
+
+		{
+			descTable.SetUav(&dev, 1, 0, targetInstance->m_geometry->m_index_vertexBuffer->m_uav.get());
+		}
+
+		std::vector<GraphicsAPI::DescriptorTable*> tableArr{ &descTable };
+
+		if (input->useInlineRT) {
+			cmdList->SetComputeRootDescriptorTable(&m_rootSignatureTransfer, 0, tableArr.data(), tableArr.size());
+			cmdList->Dispatch(GraphicsAPI::ROUND_UP(triangleCount, 128u), 1, 1);
+		}
+		else {
+			// VK uses different binding point.
+			cmdList->SetRayTracingRootDescriptorTable(&m_rootSignatureTransfer, 0, tableArr.data(), tableArr.size());
+			shaderTableRT->DispatchRays(cmdList, triangleCount, 1);
 		}
 
 		return Status::OK;
@@ -263,7 +395,7 @@ namespace KickstartRT_NativeLayer
 		auto& dev(pws->m_device);
 
 		GraphicsAPI::DescriptorTable descTable;
-		if (!descTable.Allocate(&tws->m_CBVSRVUAVHeap, &m_descTableLayout1)) {
+		if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), &m_descTableLayout1)) {
 			Log::Fatal(L"Faild to allocate a portion of desc heap.");
 			return Status::ERROR_INTERNAL;
 		}
@@ -315,7 +447,7 @@ namespace KickstartRT_NativeLayer
 		return Status::OK;
 	}
 
-	Status RenderPass_DirectLightingCacheInjection::BuildCommandList(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList,
+	Status RenderPass_DirectLightingCacheInjection::BuildCommandListInject(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList,
 		RenderPass_ResourceRegistry* resources,
 		GraphicsAPI::DescriptorTable* lightingCache_descTable,
 		const RenderTask::DirectLightingInjectionTask *directLightingInjection)
@@ -335,7 +467,37 @@ namespace KickstartRT_NativeLayer
 		{
 			GraphicsAPI::Utils::ScopedEventObject ev(cmdList, { 0, 128, 0 }, DebugName("RT:DLC Injection"));
 
-			RETURN_IF_STATUS_FAILED(Dispatch(tws, cmdList, resources, directLightingInjection));
+			RETURN_IF_STATUS_FAILED(DispatchInject(tws, cmdList, resources, directLightingInjection));
+		}
+
+		return Status::OK;
+	}
+
+	Status RenderPass_DirectLightingCacheInjection::BuildCommandListTransfer(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList,
+		RenderPass_ResourceRegistry* resources,
+		GraphicsAPI::DescriptorTable* lightingCache_descTable, const RenderTask::DirectLightTransferTask* input, const TransferParams& params)
+	{
+		if (input->useInlineRT && (!m_enableInlineRaytracing)) {
+			Log::Fatal(L"Inline raytracing is required for light cache transfer but is disabled at the SDK initialization.");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		cmdList->SetComputeRootSignature(&m_rootSignatureTransfer);
+
+		{
+			std::vector<GraphicsAPI::DescriptorTable*> tableArr{ lightingCache_descTable };
+			if (input->useInlineRT) {
+				cmdList->SetComputeRootDescriptorTable(&m_rootSignatureTransfer, 1, tableArr.data(), (uint32_t)tableArr.size());
+			}
+			else {
+				cmdList->SetRayTracingRootDescriptorTable(&m_rootSignatureTransfer, 1, tableArr.data(), (uint32_t)tableArr.size());
+			}
+		}
+
+		{
+			GraphicsAPI::Utils::ScopedEventObject ev(cmdList, { 0, 128, 0 }, DebugName("RT:DLC Injection"));
+
+			RETURN_IF_STATUS_FAILED(DispatchTransfer(tws, cmdList, resources, input, params));
 		}
 
 		return Status::OK;

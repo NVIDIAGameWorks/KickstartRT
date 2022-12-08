@@ -4,6 +4,7 @@
 2. [How it works](#2-how-it-works)
 3. [Getting Started](#3-getting-started)
 4. [License](#4-license)
+5. [Release Notes](#5-release-notes)
 
 ## 1. What's Kickstart RT
 This SDK aims to achieve higher quality reflection and GI rendering than traditional screen space techniques, using hardware ray-tracing functionality without having to set up shaders and shader resources for ray-tracing.  
@@ -15,12 +16,12 @@ Internally, the SDK creates reflection and GI information by sampling the lighti
 #### Is this a complete replacement for ray-traced reflection or GI?
 No, it is not.  
 First, Kickstart RT takes the lighting information from the G-Buffer and stores it in world space, but the SDK doesn't take into account what components it consists of (Diffuse, Specular, Fresnel etc...). It also does not take into account the material of the surfaces.
-Any surface of material that the ray hits will be evaluated as a full Lambertian, so the lighting information from the G-Buffer will be treated as radiance. This is a major compromise, as it frees the application from having to manage the materials for ray-tracing.
-On the other hand, each pixel in the screen space, which is the starting point for ray-tracing, can be evaluated as a material by passing texture parameters such as specular and roughness.
-However, if there is a sudden change in the lighting environment or object movement in the scene, the lighting information stored in the SDK may become stale and wont represent the current lighting conditions very well. In order to update the changed lighting, multiple G-Buffers containing the new lighting information must be continuously provided to the SDK for several frames. So there is a latency here and this is the another compromise.
+Any surface of material that the ray hits will be evaluated as a full Lambertian, so the lighting information from the G-Buffer will be treated as radiance. This is a major compromise but it frees the application from having to manage the materials for ray-tracing.
+Additionally, each pixel in screen space (i.e.the starting point for ray-tracing) can be evaluated as a material by passing texture parameters such as specular and roughness.
+However, if there is a sudden change in the lighting environment or object movement in the scene, the lighting information stored in the SDK may become stale and wont represent the current lighting conditions very well. In order to update the changed lighting, multiple G-Buffers containing the new lighting information must be continuously provided to the SDK for several frames. Thus there is also increased latency there which is another compromise.
 
 ## 2. How it works
-For detailed information of Kickstart RT, please refer to the separate document. Here's a rough idea of how it works
+For detailed information of Kickstart RT, please refer to the separate documents includes in the docs. Here's a rough idea of how it works
 
 1. The application passes the vertex and index buffers of the geometry in the scene to the SDK so that it builds the BVH of the scene internally.
 The SDK also receives information such as updates on geometry shapes, instance position, newly placed or removed instances etc...  
@@ -31,7 +32,7 @@ The SDK stores the information of the G-buffer in the lighting cache in world sp
 ![Slide2](https://user-images.githubusercontent.com/5753935/157593410-c6a037ec-3d1b-4f14-a19c-9dbbf10560b4.png)
 
 1. SDK performs raytracing internally and passes Reflection and GI results to the application.
-The SDK performs raytracing based on the camera position specified by the application and renders reflections and GI using information from the lighting cache built in world space, and returns the result to the application as a texture.  
+The SDK performs raytracing based on the camera position specified by the application. It renders reflections and GI using information from the lighting cache (built in world space), and returns the result to the application as a texture.  
 ![Slide3](https://user-images.githubusercontent.com/5753935/157593412-758d200b-da90-4b69-ab25-bc75545f0dca.png)
 
 ## 3. Getting Started
@@ -109,7 +110,7 @@ Kickstart is built using CMake, so the build instructions are pretty standard.
      - Set `PIX_EVENT_RUNTIME_SDK` environment variable with the path to the lib before configuring CMake.  
      - Set `KickstartRT_PIX_EVENT_RUNTIME_SDK_PATH` in the CMake's configuration with the path to the lib.  
 3. CMake confiture and generate projects.  
-You can use CMake GUI to configure project files. You can set the destination folder anywhere but `build` directory just under the repository is preferred since it is already noted in `.gitignore`.   
+You can use CMake GUI to configure project files. You can set the destination folder anywhere. However, `build` directory just under the repository is preferred since it is already noted in `.gitignore`.   
 4. Build  
   Open the Visual Studio solution which should be generated under `build` directory and build `ALL_BUILD` and `INSTALL`.  
   After `INSTALL`, built files will be assembled into `build/package` directory. You can then copy this package into your game engine for integration.  
@@ -130,4 +131,29 @@ You can use CMake GUI to configure project files. You can set the destination fo
 ## 4. License
 
 This project is under the MIT License, see the LICENSE.txt file for details. Also, you may need to check licenses for dependent components.
+
+## 5. Release Notes
+
+### Version-0.9.0
+- Initial vresion.
+
+### Version-1.0.0
+- Changed *RegisterGeometry* to accept multiple vertex/index pairs for inputs.  
+  - Changed *GeometryInput* struct.  
+  - Added struct *GeometryComponet* as a sub struct of *GeometryInput*.
+- Added *DirectLightTransfer* task  
+  - Added enum *RenderTask::Task::Type::DirectLightTransfer*.  
+  - Added struct *DirectLightTransferTask*.  
+  - Added bool *GeometryInput::allowLightTransferTarget*.
+- Added parameters to optimize raytracing workload.  
+  - Added *DirectLightingInjectionTask::injectionResolutionStride* to optimize light injection tasks.  
+  - Added *TraceTaskCommon::maxRayLength* to optimize ray tracing tasks.  
+- Added functionality to control BVH's participants of each render tasks.
+  - Added enum *BVHTask::InstanceInclusionMask*
+- Changed to allocate single descriptor heap for all render tasks.
+- Updated NRD to v3.9.2.  
+
+
+
+
 

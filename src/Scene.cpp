@@ -28,7 +28,7 @@
 #include <RenderPass_DirectLightingCacheAllocation.h>
 #include <RenderPass_DirectLightingCacheInjection.h>
 #include <RenderPass_DirectLightingCacheReflection.h>
-#include <RenderPass_DirectLightingCacheDenoising.h>
+#include <RenderPass_Denoising.h>
 #include <TaskContainer.h>
 #include <RenderTaskValidator.h>
 #include <RenderPass_Common.h>
@@ -38,6 +38,16 @@
 namespace KickstartRT_NativeLayer
 {
 	using namespace KickstartRT_NativeLayer::BVHTask;
+
+	static bool TestInstanceInputMask(const InstanceInput& inputs, const InstanceInclusionMask testBits)
+	{
+		using uType = std::underlying_type<InstanceInclusionMask>::type;
+
+		if (static_cast<uType>(inputs.instanceInclusionMask) & static_cast<uType>(testBits))
+			return true;
+
+		return false;
+	}
 
 	Status Scene::BuildTask(GPUTaskHandle* retHandle, TaskTracker* taskTracker, PersistentWorkingSet* pws, TaskContainer_impl* taskContainer, UpdateFromExecuteContext *updateFromExc, const BuildGPUTaskInput* input)
 	{
@@ -114,7 +124,9 @@ namespace KickstartRT_NativeLayer
 			userCmdList = std::make_unique<GraphicsAPI::CommandList>();
 			userCmdList->InitFromAPIData(cl4.Get(), debugCl.Get());
 			userCmdList->BeginEvent({ 0, 255, 0 }, "KickStartSDK - User provided CommandList");
+#if 0
 			userCmdList->ClearState(); // clear state here.
+#endif
 			// the interface will be released with dtor of cmdList;
 		}
 #elif defined(GRAPHICS_API_VK)
@@ -249,10 +261,9 @@ namespace KickstartRT_NativeLayer
 
 			for (auto& task : taskContainer->m_renderTask->m_renderTasks) {
 				switch (task.GetType()) {
-				case RenderTask::Task::Type::DirectLightInjection: {
-					auto& taskInj(task.Get<RenderTask::DirectLightingInjectionTask>());
-					RETURN_IF_STATUS_FAILED(RenderTaskValidator::DirectLightingInjectionTask(&taskInj));
-
+				case RenderTask::Task::Type::DirectLightInjection:
+				case RenderTask::Task::Type::DirectLightTransfer:
+				{
 					GraphicsAPI::Utils::ScopedEventObject sce(cl.m_commandList, { 0, 128, 0 }, DebugName("Light Injection Task"));
 
 					if (m_TLASBufferSrv) {
@@ -313,10 +324,40 @@ namespace KickstartRT_NativeLayer
 							}
 						}
 
-						sts = pws->m_RP_DirectLightingCacheInjection->BuildCommandList(cl.m_set, cl.m_commandList, &resources, lightingCache_descTable.get(), &taskInj);
-						if (sts != Status::OK) {
-							Log::Fatal(L"Failed to build lighting injection command list");
-							return sts;
+						if (task.GetType() == RenderTask::Task::Type::DirectLightInjection)
+						{
+							auto& taskInj(task.Get<RenderTask::DirectLightingInjectionTask>());
+							RETURN_IF_STATUS_FAILED(RenderTaskValidator::DirectLightingInjectionTask(&taskInj));
+
+							sts = pws->m_RP_DirectLightingCacheInjection->BuildCommandListInject(cl.m_set, cl.m_commandList, &resources, lightingCache_descTable.get(), &taskInj);
+							if (sts != Status::OK) {
+								Log::Fatal(L"Failed to build lighting injection command list");
+								return sts;
+							}
+						}
+						else if (task.GetType() == RenderTask::Task::Type::DirectLightTransfer)
+						{
+							auto& taskTransfer(task.Get<RenderTask::DirectLightTransferTask>());
+							RETURN_IF_STATUS_FAILED(RenderTaskValidator::DirectLightTransferTask(&taskTransfer));
+
+							BVHTask::Instance* targetInstance = BVHTask::Instance::ToPtr(taskTransfer.target);
+
+							if (!targetInstance->m_TLASInstanceListItr.has_value())
+							{
+								Log::Fatal(L"Instance is not part of TLAS.");
+								return Status::ERROR_INVALID_INSTANCE_HANDLE;
+							}
+
+							const uint32_t targetInstanceIndex = (uint32_t)std::distance(m_container.m_TLASInstanceList.begin(), targetInstance->m_TLASInstanceListItr.value());
+
+							RenderPass_DirectLightingCacheInjection::TransferParams params;
+							params.targetInstanceIndex = targetInstanceIndex;
+
+							sts = pws->m_RP_DirectLightingCacheInjection->BuildCommandListTransfer(cl.m_set, cl.m_commandList, &resources, lightingCache_descTable.get(), &taskTransfer, params);
+							if (sts != Status::OK) {
+								Log::Fatal(L"Failed to build lighting injection command list");
+								return sts;
+							}
 						}
 					}
 
@@ -400,7 +441,9 @@ namespace KickstartRT_NativeLayer
 			// clear state here to avoid state leaks from the SDK.
 			// TODO VK does't have a good way to avoid state leaks, so we strongly encourage users to close it immediately.
 #if defined(GRAPHICS_API_D3D12)
+#if 0
 			userCmdList->ClearState();
+#endif
 #endif
 			userCmdList->EndEvent();
 		}
@@ -451,7 +494,7 @@ namespace KickstartRT_NativeLayer
 		// Perform allocation of added denoising instances
 		{
 			for (std::unique_ptr<DenoisingContext>& added : updateFromExc->m_createdDenoisingContexts) {
-				added->m_RP = std::make_unique<RenderPass_DirectLightingCacheDenoising>();
+				added->m_RP = std::make_unique<RenderPass_Denoising>();
 				added->m_RP->Init(pws, added->m_input, pws->m_shaderFactory.get());
 				m_container.m_denoisingContexts.push_back(std::move(added));
 			}
@@ -460,7 +503,7 @@ namespace KickstartRT_NativeLayer
 		return Status::OK;
 	}
 
-	Status Scene::UpdateScenegraphFromExecuteContext(PersistentWorkingSet* /*pws*/, UpdateFromExecuteContext* updateFromExc, bool isSceneChanged)
+	Status Scene::UpdateScenegraphFromExecuteContext(PersistentWorkingSet* /*pws*/, UpdateFromExecuteContext* updateFromExc, bool& isSceneChanged)
 	{
 		auto RemoveInstanceFromGraph = [&](SceneContainer::InsMapIterator& itr)
 		{
@@ -650,14 +693,22 @@ namespace KickstartRT_NativeLayer
 			}
 			Geometry* gp = gItr->second.get();
 
+#if 0
 			if (RenderPass_DirectLightingCacheAllocation::CheckUpdateInputs(gp->m_input, upGeom.m_input) != Status::OK) {
 				Log::Fatal(L"Invalid input values were detected when updating a geometry. %" PRIu64, (uint64_t)upGeom.m_gh);
 				continue;
 			}
+#endif
+
 			// only vertex buffer is going to be updated.
-			gp->m_input.vertexBuffer = upGeom.m_input.vertexBuffer;
-			gp->m_input.useTransform = upGeom.m_input.useTransform;
-			gp->m_input.transform = upGeom.m_input.transform;
+			assert(gp->m_input.components.size() == upGeom.m_input.components.size());
+			for (size_t i = 0; i < upGeom.m_input.components.size(); ++i) {
+				auto& src(upGeom.m_input.components[i]);
+				auto& dst(gp->m_input.components[i]);
+				dst.vertexBuffer = src.vertexBuffer;
+				dst.useTransform = src.useTransform;
+				dst.transform = src.transform;
+			}
 
 			// Do not add this to the update geom list when it's just registered.
 			if (gp->m_registerStatus == BVHTask::RegisterStatus::Registered)
@@ -674,12 +725,22 @@ namespace KickstartRT_NativeLayer
 			}
 			Instance* ip = iItr->second.get();
 
-			// update transform from input
+			// update transform and visiblity from input
 			ip->m_input.transform = upIns.m_input.transform;
+			ip->m_input.participatingInTLAS = upIns.m_input.participatingInTLAS;
+			ip->m_input.instanceInclusionMask = upIns.m_input.instanceInclusionMask;
 
 			// Do not add this to the update instance list when it's just registered.
 			if (ip->m_registerStatus == BVHTask::RegisterStatus::Registered)
 				updatedInstancePtrs.push_back(ip);
+
+			// If its TLAS participating status is changed to disable and if it is participating in TLAS, remove it.
+			if (! ip->m_input.participatingInTLAS) {
+				if (ip->m_TLASInstanceListItr.has_value()) {
+					m_container.m_TLASInstanceList.erase(ip->m_TLASInstanceListItr.value());
+					ip->m_TLASInstanceListItr.reset();
+				}
+			}
 		}
 		if (updatedInstancePtrs.size() > 0)
 			isSceneChanged = true;
@@ -754,7 +815,7 @@ namespace KickstartRT_NativeLayer
 		}
 		else if (ip->m_geometry->m_input.surfelType == BVHTask::GeometryInput::SurfelType::MeshColors) {
 			size_t size = 0;
-			size += sizeof(uint32_t) * 2 * ip->m_geometry->m_nbVertexIndices;
+			size += sizeof(uint32_t) * 2 * ip->m_geometry->m_totalNbIndices;
 			size += sizeof(uint32_t) * numOfTiles;
 			ip->m_dynamicTileBuffer = pws->m_sharedBufferForDirectLightingCache->Allocate(
 				pws, size, true);
@@ -846,7 +907,7 @@ namespace KickstartRT_NativeLayer
 
 			for (auto&& gp : readyToReadback) {
 				if (gp->m_input.surfelType == BVHTask::GeometryInput::SurfelType::WarpedBarycentricStorage) {
-					uint32_t nbPrim = gp->m_input.indexBuffer.count / 3;
+					uint32_t nbPrim = gp->m_totalNbIndices / 3;
 
 					// Check if the geometry falls into direct tile mapping.
 					if (!gp->m_input.forceDirectTileMapping)
@@ -943,23 +1004,27 @@ namespace KickstartRT_NativeLayer
 		}
 
 		// clear input resources to makes sure not to touch them anymore.
-		for (auto gh : addedGeometries) {
+		for (auto&& gh : addedGeometries) {
+			for (auto&& cmp : gh->m_input.components) {
 #if defined(GRAPHICS_API_D3D12)
-			gh->m_input.vertexBuffer.resource = nullptr;
-			gh->m_input.indexBuffer.resource = nullptr;
+				cmp.vertexBuffer.resource = nullptr;
+				cmp.indexBuffer.resource = nullptr;
 #elif defined(GRAPHICS_API_VK)
-			gh->m_input.vertexBuffer.typedBuffer = nullptr;
-			gh->m_input.indexBuffer.typedBuffer = nullptr;
+				cmp.vertexBuffer.typedBuffer = nullptr;
+				cmp.indexBuffer.typedBuffer = nullptr;
 #endif
+			}
 		}
-		for (auto gh : updatedGeometries) {
+		for (auto&& gh : updatedGeometries) {
+			for (auto&& cmp : gh->m_input.components) {
 #if defined(GRAPHICS_API_D3D12)
-			gh->m_input.vertexBuffer.resource = nullptr;
-			gh->m_input.indexBuffer.resource = nullptr;
+				cmp.vertexBuffer.resource = nullptr;
+				cmp.indexBuffer.resource = nullptr;
 #elif defined(GRAPHICS_API_VK)
-			gh->m_input.vertexBuffer.typedBuffer = nullptr;
-			gh->m_input.indexBuffer.typedBuffer = nullptr;
+				cmp.vertexBuffer.typedBuffer = nullptr;
+				cmp.indexBuffer.typedBuffer = nullptr;
 #endif
+			}
 		}
 
 		return Status::OK;
@@ -1196,10 +1261,10 @@ namespace KickstartRT_NativeLayer
 				desc.Triangles.IndexBuffer = gp->m_index_vertexBuffer->GetGpuPtr();
 
 				desc.Triangles.VertexBuffer.StrideInBytes = sizeof(float) * 3;
-				desc.Triangles.VertexCount = gp->GetVertexCountAfterTransform();
+				desc.Triangles.VertexCount = gp->m_totalNbVertices;
 				desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 				desc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-				desc.Triangles.IndexCount = gp->m_input.indexBuffer.count;
+				desc.Triangles.IndexCount = gp->m_totalNbIndices;
 
 				asInput = {};
 				asInput.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
@@ -1264,7 +1329,7 @@ namespace KickstartRT_NativeLayer
 				VkDeviceAddress vertexAddress = gp->m_index_vertexBuffer->GetGpuPtr() + gp->m_vertexBufferOffsetInBytes;
 				VkDeviceAddress indexAddress = gp->m_index_vertexBuffer->GetGpuPtr();
 
-				uint32_t maxPrimitiveCount = gp->m_input.indexBuffer.count / 3;
+				uint32_t maxPrimitiveCount = gp->m_totalNbIndices / 3;
 
 				// Describe buffer as array of VertexObj.
 				VkAccelerationStructureGeometryTrianglesDataKHR triangles = {};
@@ -1275,7 +1340,7 @@ namespace KickstartRT_NativeLayer
 				// Describe index data (32-bit unsigned int)
 				triangles.indexType = VK_INDEX_TYPE_UINT32;
 				triangles.indexData.deviceAddress = indexAddress;
-				triangles.maxVertex = (uint32_t)gp->m_nbVertices;
+				triangles.maxVertex = (uint32_t)gp->m_totalNbVertices;
 
 				// Identify the above data as containing opaque triangles.
 				asGeom = {};
@@ -1615,7 +1680,9 @@ namespace KickstartRT_NativeLayer
 #if defined(GRAPHICS_API_D3D12)
 				pws->DeferredRelease(std::move(gp->m_BLASCompactionSizeBuffer));
 #endif
-				pws->DeferredRelease(std::move(gp->m_index_vertexBuffer));
+				// Light transfer requires index_vertexbuffer to compute the geometric normal.
+				if (!gp->m_input.allowLightTransferTarget)
+					pws->DeferredRelease(std::move(gp->m_index_vertexBuffer));
 			}
 		}
 
@@ -1644,6 +1711,10 @@ namespace KickstartRT_NativeLayer
 				// Fill instance desc and upload it to a GPU visible buffer 
 
 				for (auto&& itr : m_container.m_instances) {
+					if (! itr.second->m_input.participatingInTLAS) {
+						continue;
+					}
+
 					auto gp = itr.second->m_geometry;
 
 					if (gp == nullptr)
@@ -1654,7 +1725,7 @@ namespace KickstartRT_NativeLayer
 						continue;
 					}
 
-					// A valid instance but not on the list.
+					// A valid instance and visible, but not on the list.
 					if (!itr.second->m_TLASInstanceListItr.has_value()) {
 						// Put the instance at the last of instance list for TLAS so that long-living instances should be stay the same place of the list longer.
 						m_container.m_TLASInstanceList.push_back(itr.second->ToHandle());
@@ -1799,7 +1870,7 @@ namespace KickstartRT_NativeLayer
 				ip->m_input.transform.CopyTo(&iDesc.Transform[0][0]);
 				iDesc.InstanceID = nbInstanceParticipated;
 				iDesc.InstanceContributionToHitGroupIndex = 0; // since we only use inline raytracing.
-				iDesc.InstanceMask = 0xFF;
+				iDesc.InstanceMask = uint8_t(ip->m_input.instanceInclusionMask);
 				iDesc.Flags = D3D12_RAYTRACING_INSTANCE_FLAG_TRIANGLE_CULL_DISABLE | D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
 				iDesc.AccelerationStructure = gp->m_BLASBuffer->GetGpuPtr();
 #elif defined(GRAPHICS_API_VK)
@@ -1807,7 +1878,7 @@ namespace KickstartRT_NativeLayer
 				iDesc = {};
 				ip->m_input.transform.CopyTo(&iDesc.transform);
 				iDesc.instanceCustomIndex = nbInstanceParticipated;
-				iDesc.mask = 0xFF;
+				iDesc.mask = uint8_t(ip->m_input.instanceInclusionMask);
 				iDesc.instanceShaderBindingTableRecordOffset = 0;
 				iDesc.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR | VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 				iDesc.accelerationStructureReference = gp->m_BLASBuffer->GetGpuPtr();
@@ -1818,19 +1889,6 @@ namespace KickstartRT_NativeLayer
 
 		if (m_enableInfoLog) {
 			Log::Info(L"BuildTLASCommand() NbInstancesParticipated: %d", nbInstanceParticipated);
-		}
-
-		if (nbInstanceParticipated == 0) {
-			// there is no instance to render.
-			// Release TLAS buffer and Scratch buffer
-			if (m_TLASScratchBuffer) {
-				pws->DeferredRelease(std::move(m_TLASScratchBuffer));
-			}
-			if (m_TLASBuffer) {
-				pws->DeferredRelease(std::move(m_TLASBuffer));
-				pws->DeferredRelease(std::move(m_TLASBufferSrv));
-			}
-			return Status::OK;
 		}
 
 		// shrink the array to cut unused region.
@@ -1858,7 +1916,7 @@ namespace KickstartRT_NativeLayer
 			}
 
 			// copy instance info to the upload buffer.
-			{
+			if (requiredUploadSize > 0) {
 				void* ptr = tws->m_TLASUploadBuffer->Map(&pws->m_device, GraphicsAPI::Buffer::MapType::WriteDiscard, 0, 0, 0);
 				if (ptr != nullptr) {
 					memcpy(ptr, &iDescs[0], requiredUploadSize);
@@ -1880,7 +1938,7 @@ namespace KickstartRT_NativeLayer
 			D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS ASInputs = {};
 			ASInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
 			ASInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-			ASInputs.InstanceDescs = tws->m_TLASUploadBuffer->GetGpuAddress();
+			ASInputs.InstanceDescs = instanceCount > 0 ? tws->m_TLASUploadBuffer->GetGpuAddress() : 0;
 			ASInputs.NumDescs = instanceCount;
 			ASInputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
@@ -1897,7 +1955,7 @@ namespace KickstartRT_NativeLayer
 			VkAccelerationStructureGeometryInstancesDataKHR instances = {};
 			instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
 			instances.arrayOfPointers = false;
-			instances.data.deviceAddress = tws->m_TLASUploadBuffer->GetGpuAddress();
+			instances.data.deviceAddress = instanceCount > 0 ? tws->m_TLASUploadBuffer->GetGpuAddress() : 0;
 
 			// Identify the above data as containing opaque triangles.
 			VkAccelerationStructureGeometryKHR asGeom = {};
@@ -2191,7 +2249,7 @@ namespace KickstartRT_NativeLayer
 		}
 
 		// the last one is unbound descTableLayout so we need to specify its size.
-		if (!destDescTable->Allocate(&tws->m_CBVSRVUAVHeap, srcLayout, descTableSize)) {
+		if (!destDescTable->Allocate(tws->m_CBVSRVUAVHeap.get(), srcLayout, descTableSize)) {
 			Log::Fatal(L"Faild to allocate a portion of desc heap.");
 			return Status::ERROR_INTERNAL;
 		}
