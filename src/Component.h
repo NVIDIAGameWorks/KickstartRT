@@ -20,20 +20,6 @@
 * SOFTWARE.
 */
 #pragma once
+
 #include <Platform.h>
-
-namespace KickstartRT_NativeLayer
-{
-	class Scene;
-
-	class RenderTaskValidator {
-		friend class Scene;
-
-	public:
-		static Status DirectLightingInjectionTask(const RenderTask::DirectLightingInjectionTask* input);
-		static Status DirectLightTransferTask(const RenderTask::DirectLightTransferTask* input);
-		static Status TraceTask(const RenderTask::Task* task);
-		static Status DenoisingTask(const RenderTask::Task* task);
-	};
-};
 

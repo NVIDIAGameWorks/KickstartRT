@@ -128,7 +128,7 @@ void rgs(uint2 LaunchIndex)
 		RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
 		rayQuery.TraceRayInline(t_SceneBVH,
 			RAY_FLAG_NONE, // RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			ray);
 		rayQuery.Proceed();
 
@@ -149,7 +149,7 @@ void rgs(uint2 LaunchIndex)
 		TraceRay(
 			t_SceneBVH,
 			RAY_FLAG_CULL_BACK_FACING_TRIANGLES, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			0, //RayContributionToHitGroupIndex
 			0, //MultiplierForGeometryContributionToHitGroupIndex
 			0, //MissShaderIndex

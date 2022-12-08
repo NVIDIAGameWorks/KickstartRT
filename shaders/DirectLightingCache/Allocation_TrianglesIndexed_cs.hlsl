@@ -49,8 +49,8 @@ struct CB_Allocation_TrianglesIndexed
 
     uint    m_vtxSRVOffsetElm;
     uint    m_idxSRVOffsetElm;
-    uint    m_padd_0;
-    uint    m_padd_1;
+    uint    m_vtxComponentOffset;
+    uint    m_idxComponentOffset;
 
     float4x4    m_transformationMatrix;
 };
@@ -91,17 +91,40 @@ groupshared float3  s_vPos[GROUP_SIZE];
 groupshared uint    s_idcs[GROUP_SIZE];
 groupshared uint    s_edgeSize[GROUP_SIZE];
 
-float3 SampleVertexBuffer(uint offset)
+float3 SampleVertex(uint vIdx)
 {
+    uint    offset = vIdx * CB.m_vertexStride;
+
     return float3(
         t_vertexBuffer[offset + CB.m_vtxSRVOffsetElm + 0],
         t_vertexBuffer[offset + CB.m_vtxSRVOffsetElm + 1],
         t_vertexBuffer[offset + CB.m_vtxSRVOffsetElm + 2]);
 }
 
-uint GetVertexIndex(uint index)
+void StoreVertex(uint vIdx, float3 vPos)
 {
-    return t_indexBuffer[index + CB.m_idxSRVOffsetElm];
+    uint ofs = CB.m_dstVertexBufferOffsetIdx + (vIdx + CB.m_vtxComponentOffset) * 3;
+
+    u_index_vertexBuffer[ofs + 0] = asuint(vPos.x);
+    u_index_vertexBuffer[ofs + 1] = asuint(vPos.y);
+    u_index_vertexBuffer[ofs + 2] = asuint(vPos.z);
+}
+
+uint SampleVertexIndex(uint index)
+{
+    uint vtxIdx = clamp(t_indexBuffer[index + CB.m_idxSRVOffsetElm], CB.m_indexRangeMin, CB.m_indexRangeMax);
+
+    // Adjust the vertx index becuse the SRV of the VB is adjusted with the index range.
+    vtxIdx -= CB.m_indexRangeMin;
+    
+    return vtxIdx;
+}
+
+// Store a merged vertex index with a merged offset.
+void StoreVertexIndex(uint iIdx, uint idx)
+{
+    //u_index_vertexBuffer[iIdx + CB.m_idxComponentOffset] = idx + CB.m_vtxComponentOffset;
+    u_index_vertexBuffer[iIdx] = idx;
 }
 
 uint AllocateFromBuffer(RWBuffer<uint> buffer, uint allocSize) {
@@ -118,14 +141,21 @@ uint AllocateFromBuffer(RWBuffer<uint> buffer, uint allocSize) {
 }
 
 struct Edge {
-
-    void Init(uint i0, uint i1) {
+    void Init(uint i0, float3 v0, uint i1, float3 v1) {
         _isReversed = i0 < i1;
-        _i0 = min(i0, i1);
-        _i1 = max(i0, i1);
 
-        _p0.xyz = SampleVertexBuffer(_i0 * CB.m_vertexStride);
-        _p1.xyz = SampleVertexBuffer(_i1 * CB.m_vertexStride);
+        if (_isReversed) {
+            _i0 = i0;
+            _i1 = i1;
+            _p0.xyz = v0;
+            _p1.xyz = v1;
+        }
+        else {
+            _i0 = i1;
+            _i1 = i0;
+            _p0.xyz = v1;
+            _p1.xyz = v0;
+        }
     }
 
     bool IsReversed() {
@@ -249,10 +279,9 @@ void main(
 {
     [loop]
     for (int vIdx = globalIdx.x; vIdx < CB.m_nbVertices; vIdx += CB.m_nbDispatchThreads) {
-        uint    vBaseOffset = vIdx * CB.m_vertexStride;
         float4  vPos;
 
-        vPos.xyz = SampleVertexBuffer(vBaseOffset);
+        vPos.xyz = SampleVertex(vIdx);
         vPos.w = 1.0;
 
         if (CB.m_enableTransformation != 0) {
@@ -260,9 +289,7 @@ void main(
             vPos.xyz /= vPos.w;
         }
 
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 0] = asuint(vPos.x);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 1] = asuint(vPos.y);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 2] = asuint(vPos.z);
+        StoreVertex(vIdx, vPos.xyz);
     }
 }
 #endif
@@ -274,7 +301,10 @@ void main(
     uint2 globalIdx : SV_DispatchThreadID,
     uint2 threadIdx : SV_GroupThreadID)
 {
-    if (globalIdx.x == 0) {
+    uint mergedGlobalIdx = globalIdx.x + CB.m_idxComponentOffset;
+
+    // Store header info if the thread is the first thread of the first geometry component.
+    if (mergedGlobalIdx == 0) {
         SurfelCache::Header header;
         header.format = 1;
         SurfelCache::StoreHeader(u_tileIndex, 0, header);
@@ -285,8 +315,8 @@ void main(
     GroupMemoryBarrierWithGroupSync();
 
     if (globalIdx.x < CB.m_nbIndices)
-    { 
-        const uint halfEdgeId   = globalIdx.x;
+    {
+        const uint halfEdgeId = mergedGlobalIdx;
         
         // Read the unresolved edge from previous pass...
         uint slotIndex                          = MeshColors::GetHalfEdgeBufferLocation(halfEdgeId);
@@ -327,7 +357,7 @@ void main(
 
         uint offset = AllocateFromBuffer(u_tileCounter, 2 * samplesPerFace);
 
-        uint primitiveIndex = globalIdx.x / 3;
+        uint primitiveIndex = mergedGlobalIdx / 3;
 
         MeshColors::FaceColor face;
         face.offset = offset;
@@ -349,13 +379,14 @@ void main(
     uint2 globalIdx : SV_DispatchThreadID,
     uint2 threadIdx : SV_GroupThreadID)
 {
+    uint mergedGlobalIdx = globalIdx.x + CB.m_idxComponentOffset;
+
     // load vertx, transform and store it to vertexBuffer. vertex order is unchanged
     [loop]
     for (int vIdx = globalIdx.x; vIdx < CB.m_nbVertices; vIdx += CB.m_nbDispatchThreads) {
-        uint    vBaseOffset = vIdx * CB.m_vertexStride;
         float4  vPos;
 
-        vPos.xyz = SampleVertexBuffer(vBaseOffset);
+        vPos.xyz = SampleVertex(vIdx);
         vPos.w = 1.0;
 
         if (CB.m_enableTransformation != 0) {
@@ -363,9 +394,7 @@ void main(
             vPos.xyz /= vPos.w;
         }
 
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 0] = asuint(vPos.x);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 1] = asuint(vPos.y);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 2] = asuint(vPos.z);
+        StoreVertex(vIdx, vPos.xyz);
     }
 
     // load vtx[idx], transform and store it to shared mem.
@@ -373,16 +402,12 @@ void main(
         uint    vtxIdx = globalIdx.x; // flatten vtxIdx.
 
 #if USE_VERTEX_INDEX_INPUTS
-        {
-            vtxIdx = clamp(GetVertexIndex(globalIdx.x), CB.m_indexRangeMin, CB.m_indexRangeMax);
-            vtxIdx -= CB.m_indexRangeMin; // adjust index as SRV for the input VB is also adjusted its offset.
-        }
+        vtxIdx = SampleVertexIndex(globalIdx.x);
 #endif
 
-        uint    vBaseOffset = vtxIdx * CB.m_vertexStride;
         float4  vPos;
 
-        vPos.xyz = SampleVertexBuffer(vBaseOffset);
+        vPos.xyz = SampleVertex(vtxIdx);
         vPos.w = 1.0;
 
         if (CB.m_enableTransformation != 0) {
@@ -390,28 +415,26 @@ void main(
             vPos.xyz /= vPos.w;
         }
 
+        // Adjust the vertex index from geometry component local one to the merged geometry one.
+        uint mergedVtxIdx = vtxIdx + CB.m_vtxComponentOffset;
+
         s_vPos[threadIdx.x] = vPos.xyz;
-        s_idcs[threadIdx.x] = vtxIdx;
+        s_idcs[threadIdx.x] = mergedVtxIdx;
     }
 
     GroupMemoryBarrierWithGroupSync();
 
     // Shared mem should have 96 verts (32 pirms) with its indices.
 
-
     // (Half)Edge & Vertex
-    uint i0 = 0;
 	if (globalIdx.x < CB.m_nbIndices)
     {
-        const bool threadIsValid = globalIdx.x < CB.m_nbIndices;
-
         // Do edge analysis + store in meshColorsHeader buffer.
-        uint halfEdgeId = globalIdx.x;
 
         const uint baseIndex = 3 * (threadIdx.x / 3);
-             i0 = threadIdx.x; // baseIndex + ((threadIdx.x + 0) % 3);
-        uint i1 = baseIndex + ((threadIdx.x + 1) % 3);
-        uint i2 = baseIndex + ((threadIdx.x + 2) % 3);
+        const uint i0 = threadIdx.x; // baseIndex + ((threadIdx.x + 0) % 3);
+        const uint i1 = baseIndex + ((threadIdx.x + 1) % 3);
+        const uint i2 = baseIndex + ((threadIdx.x + 2) % 3);
 
         const float3 v0 = s_vPos[i1] - s_vPos[i0];
         const float3 v1 = s_vPos[i2] - s_vPos[i0];
@@ -444,9 +467,11 @@ void main(
 			log2R               = firstbithigh(R);
 		}
 
+        uint halfEdgeId = mergedGlobalIdx;
+
         {
             Edge e;
-            e.Init(s_idcs[i0], s_idcs[i1]);
+            e.Init(s_idcs[i0], s_vPos[i0], s_idcs[i1], s_vPos[i1]);
 
             MeshColors::UnresolvedEdgeColor uEdge = GetEdge(e, halfEdgeId, log2R);
 
@@ -455,14 +480,11 @@ void main(
                 MeshColors::GetHalfEdgeBufferLocation(halfEdgeId),
                 MeshColors::UnresolvedEdgePack(uEdge));
         }
-    }
 
-    if (globalIdx.x < CB.m_nbIndices)
-    {
         {
             // Store index in meshColorsHeader buffer.
-            uint primitiveIndex = globalIdx.x / 3;
-            uint vertexOffset = globalIdx.x % 3;
+            uint primitiveIndex = mergedGlobalIdx / 3;
+            uint vertexOffset = mergedGlobalIdx % 3;
 
             MeshColors::VertexColor vertex;
             vertex.offset = s_idcs[i0];
@@ -472,17 +494,25 @@ void main(
                 MeshColors::GetVertexSlotBufferLocation(primitiveIndex, vertexOffset),
                 MeshColors::VertexPack(vertex));
         }
+
+#if 1
+        // Face
+        // store index array along the order.
+        StoreVertexIndex(mergedGlobalIdx, s_idcs[threadIdx.x]);
+#endif
     }
 
+#if 0
     // Face
     if (globalIdx.x < CB.m_nbIndices && globalIdx.x % 3 == 0)
     {
         [unroll]
         for (int i = 0; i < 3; ++i) {
             // store index array along the order.
-            u_index_vertexBuffer[globalIdx.x + i] = s_idcs[threadIdx.x + i];
+            StoreVertexIndex(mergedGlobalIdx + i, s_idcs[threadIdx.x + i]);
         }
     }
+#endif
 }
 #endif
 
@@ -494,7 +524,10 @@ void main(
     uint2 globalIdx : SV_DispatchThreadID,
     uint2 threadIdx : SV_GroupThreadID)
 {
-    if (globalIdx.x == 0) {
+    uint mergedGlobalIdx = globalIdx.x + CB.m_idxComponentOffset;
+
+    // Store header info if the thread is the first thread of the first geometry component.
+    if (mergedGlobalIdx == 0) {
         SurfelCache::Header header;
         header.format = 0;
         SurfelCache::StoreHeader(u_tileIndex, 0, header);
@@ -503,10 +536,9 @@ void main(
     // load vertx, transform and store it to vertexBuffer. vertex order is unchanged
     [loop]
     for (int vIdx = globalIdx.x; vIdx < CB.m_nbVertices; vIdx += CB.m_nbDispatchThreads) {
-        uint    vBaseOffset = vIdx * CB.m_vertexStride;
         float4  vPos;
 
-        vPos.xyz = SampleVertexBuffer(vBaseOffset);
+        vPos.xyz = SampleVertex(vIdx);
         vPos.w = 1.0;
 
         if (CB.m_enableTransformation != 0) {
@@ -514,9 +546,7 @@ void main(
             vPos.xyz /= vPos.w;
         }
 
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 0] = asuint(vPos.x);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 1] = asuint(vPos.y);
-        u_index_vertexBuffer[CB.m_dstVertexBufferOffsetIdx + vIdx * 3 + 2] = asuint(vPos.z);
+        StoreVertex(vIdx, vPos.xyz);
     }
 
     // load vtx[idx], transform and store it to shared mem.
@@ -524,16 +554,12 @@ void main(
         uint    vtxIdx = globalIdx.x; // flatten vtxIdx.
 
 #if USE_VERTEX_INDEX_INPUTS
-        {
-            vtxIdx = clamp(GetVertexIndex(globalIdx.x), CB.m_indexRangeMin, CB.m_indexRangeMax);
-            vtxIdx -= CB.m_indexRangeMin; // adjust index as SRV for the input VB is also adjusted its offset.
-        }
+        vtxIdx = SampleVertexIndex(globalIdx.x);
 #endif
 
-        uint    vBaseOffset = vtxIdx * CB.m_vertexStride;
         float4  vPos;
 
-        vPos.xyz = SampleVertexBuffer(vBaseOffset);
+        vPos.xyz = SampleVertex(vtxIdx);
         vPos.w = 1.0;
 
         if (CB.m_enableTransformation != 0) {
@@ -541,8 +567,11 @@ void main(
             vPos.xyz /= vPos.w;
         }
 
+        // Adjust the vertex index from geometry component local one to the merged geometry one.
+        uint mergedVtxIdx = vtxIdx + CB.m_vtxComponentOffset;
+
         s_vPos[threadIdx.x] = vPos.xyz;
-        s_idcs[threadIdx.x] = vtxIdx;
+        s_idcs[threadIdx.x] = mergedVtxIdx;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -601,15 +630,15 @@ void main(
         }
         // now vPos and idcs were ordered so that the 2nd edge is the longest edge.
         //  1
-        //  |   
-        //  |        
+        //  |   |
+        //  |        |
         //  0-----------2
         //
 
         [unroll]
         for (i = 0; i < 3; ++i) {
             // store index array along the order.
-            u_index_vertexBuffer[globalIdx.x + i] = idcs[i].x;
+            StoreVertexIndex(mergedGlobalIdx + i, idcs[i].x);
         }
 
         // calc tile budget with the edge length.
@@ -625,7 +654,7 @@ void main(
             tileResolutions = clamp(tileResolutions, 1, CB.m_tileResolutionLimit);
 
             uint nbTiles = tileResolutions.x * tileResolutions.y;
-            uint primIdx = globalIdx.x / 3;
+            uint primIdx = mergedGlobalIdx / 3;
 
             uint tileOffset = AllocateFromBuffer(u_tileCounter, nbTiles);
 

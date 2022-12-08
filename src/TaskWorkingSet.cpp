@@ -105,11 +105,48 @@ namespace KickstartRT_NativeLayer
 			desc.m_descCount[dh::value(dh::Type::AccelerationStructureSrv)] = descHeapBudgetForARenderTask[6] * supportedRenderTaskNum;
 			totalDescs += desc.m_descCount[dh::value(dh::Type::AccelerationStructureSrv)];
 			desc.m_totalDescCount = totalDescs;
-			if (!m_CBVSRVUAVHeap.Create(&m_persistentWorkingSet->m_device, desc, true)) {
-				Log::Fatal(L"Failed to create descriptor heap");
-				return Status::ERROR_FAILED_TO_INIT_TASK_WORKING_SET;
+
+#if defined(GRAPHICS_API_D3D12)
+			if (m_persistentWorkingSet->m_descHeaps.size() == 0) {
+				// Allocate a desc heap whic is going to be shared with all task working set.
+				dh::Desc	descForAll = desc;
+				for (auto&& ent : descForAll.m_descCount) {
+					ent *= settings->supportedWorkingsets;
+				}
+				descForAll.m_totalDescCount *= settings->supportedWorkingsets;
+
+				std::unique_ptr<GraphicsAPI::DescriptorHeap>	heap = std::make_unique<GraphicsAPI::DescriptorHeap>();
+				if (!heap->Create(&m_persistentWorkingSet->m_device, descForAll, true)) {
+					Log::Fatal(L"Failed to create descriptor heap");
+					return Status::ERROR_FAILED_TO_INIT_TASK_WORKING_SET;
+				}
+				heap->SetName(DebugName(L"TaskWorkingSet"));
+
+				m_persistentWorkingSet->m_descHeaps.push_back(std::move(heap));
 			}
-			m_CBVSRVUAVHeap.SetName(DebugName(L"TaskWorkingSet"));
+			{
+				std::unique_ptr<GraphicsAPI::DescriptorSubHeap>	h = std::make_unique<GraphicsAPI::DescriptorSubHeap>();
+				// Suballocate desc heap for each task working set.
+
+				if (!h->Init(m_persistentWorkingSet->m_descHeaps[0].get(), desc)) {
+					Log::Fatal(L"Failed to suballocate descriptor heap");
+					return Status::ERROR_FAILED_TO_INIT_TASK_WORKING_SET;
+				}
+
+				m_CBVSRVUAVHeap = std::move(h);
+			}
+#elif  defined(GRAPHICS_API_VK)
+			{
+				std::unique_ptr<GraphicsAPI::DescriptorHeap>	h = std::make_unique<GraphicsAPI::DescriptorHeap>();
+				if (! h->Create(&m_persistentWorkingSet->m_device, desc, true)) {
+					Log::Fatal(L"Failed to create descriptor heap");
+					return Status::ERROR_FAILED_TO_INIT_TASK_WORKING_SET;
+				}
+				h->SetName(DebugName(L"TaskWorkingSet"));
+
+				m_CBVSRVUAVHeap = std::move(h);
+			}
+#endif
 		}
 
 		// volatile constant buffer
@@ -136,7 +173,7 @@ namespace KickstartRT_NativeLayer
 	Status TaskWorkingSet::Begin()
 	{
 		// reset desc heap allocation.
-		m_CBVSRVUAVHeap.ResetAllocation();
+		m_CBVSRVUAVHeap->ResetAllocation();
 
 		// reset upload heap for volatile constant buffer.
 		m_volatileConstantBuffer.BeginMapping(&m_persistentWorkingSet->m_device);

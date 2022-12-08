@@ -347,7 +347,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
      * DescriptorPool in VK
      ***************************************************************/
 #if defined(GRAPHICS_API_D3D12)
-    constexpr D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeap::nativeType(const DescriptorHeap::Type &t)
+    constexpr D3D12_DESCRIPTOR_HEAP_TYPE IDescriptorHeap::nativeType(const IDescriptorHeap::Type& t)
     {
         switch (t)
         {
@@ -437,6 +437,16 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         return true;
     }
 
+    void DescriptorHeap::GetHeaps(std::vector<ID3D12DescriptorHeap*>& retHeaps)
+    {
+        retHeaps.clear();
+        retHeaps.reserve((size_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES);
+        for (uint32_t i = 0; i < (uint32_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i) {
+            if (m_apiData.m_heaps[i].m_numDescriptors > 0)
+                retHeaps.push_back(m_apiData.m_heaps[i].m_descHeap);
+        }
+    }
+
     bool DescriptorHeap::ResetAllocation()
     {
         for (auto& h : m_apiData.m_heaps)
@@ -457,7 +467,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         D3D12_DESCRIPTOR_HEAP_TYPE heapType = nativeType(descTable->m_ranges[0].m_type);
         uint32_t nbEntryToAllocate = 0;
         for (size_t i = 0; i < descTable->m_ranges.size(); ++i) {
-            if (heapType != DescriptorHeap::nativeType(descTable->m_ranges[i].m_type)) {
+            if (heapType != IDescriptorHeap::nativeType(descTable->m_ranges[i].m_type)) {
                 Log::Fatal(L"Different heap type entry cannot be in single descriptor table.");
                 return false;
             }
@@ -496,13 +506,128 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         return true;
     }
 
+    DescriptorSubHeap::~DescriptorSubHeap()
+    {
+        m_heap = nullptr;
+    }
+
+    bool DescriptorSubHeap::Init(DescriptorHeap* descHeap, const DescriptorHeap::Desc& desc)
+    {
+        using dh = GraphicsAPI::DescriptorSubHeap;
+
+        uint32_t nativeDescCount[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 0 };
+        for (uint32_t i = 0; i < value(Type::Count); ++i) {
+            Type t = static_cast<Type>(i);
+            nativeDescCount[nativeType(t)] += desc.m_descCount[value(t)];
+        }
+
+        // Check the sub allocation size
+        for (uint32_t i = 0; i < (uint32_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i) {
+            if (nativeDescCount[i] == 0)
+                continue;
+
+            if (descHeap->m_apiData.m_heaps[i].m_currentOffset + nativeDescCount[i] > descHeap->m_apiData.m_heaps[i].m_numDescriptors)
+            {
+                Log::Fatal(L"Failed to suballocate descriptor heap. NumDesc:%d CurrentOffset:%d TriedToAllocate:%d",
+                    descHeap->m_apiData.m_heaps[i].m_numDescriptors, descHeap->m_apiData.m_heaps[i].m_currentOffset, nativeDescCount[i]);
+                return false;
+            }
+        }
+
+        // sub allocation.
+        m_heap = descHeap;
+        for (uint32_t i = 0; i < (uint32_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i) {
+            if (nativeDescCount[i] == 0)
+                continue;
+
+            auto& heap(m_heap->m_apiData.m_heaps[i]);
+            auto& subHeap(m_apiData.m_subHeaps[i]);
+
+            subHeap.m_descHeap = heap.m_descHeap;
+            subHeap.m_incrementSize = heap.m_incrementSize;
+            subHeap.m_numDescriptors = heap.m_numDescriptors;
+            subHeap.m_subAllocationOffset = heap.m_currentOffset;
+            subHeap.m_subAllocationSize = nativeDescCount[i];
+
+            heap.m_currentOffset += nativeDescCount[i];
+        }
+
+        return true;
+    };
+
+    void DescriptorSubHeap::GetHeaps(std::vector<ID3D12DescriptorHeap*>& retHeaps)
+    {
+        retHeaps.clear();
+        retHeaps.reserve((size_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES);
+        for (uint32_t i = 0; i < (uint32_t)D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i) {
+            if (m_apiData.m_subHeaps[i].m_subAllocationSize > 0) {
+                assert(m_heap->m_apiData.m_heaps[i].m_numDescriptors > 0);
+                retHeaps.push_back(m_heap->m_apiData.m_heaps[i].m_descHeap);
+            }
+        }
+    }
+
+    bool DescriptorSubHeap::ResetAllocation()
+    {
+        for (auto& h : m_apiData.m_subHeaps)
+            h.m_currentOffset = 0;
+
+        return true;
+    }
+
+    bool DescriptorSubHeap::Allocate(const DescriptorTableLayout* descTable, AllocationInfo* retAllocationInfo, uint32_t unboundDescTableCount)
+    {
+        *retAllocationInfo = {};
+
+        if ((!descTable->m_lastUnbound) && unboundDescTableCount > 0) {
+            Log::Fatal(L"Error: Invalid unbound descriptor table count detected.");
+            return false;
+        }
+
+        D3D12_DESCRIPTOR_HEAP_TYPE heapType = nativeType(descTable->m_ranges[0].m_type);
+        uint32_t nbEntryToAllocate = 0;
+        for (size_t i = 0; i < descTable->m_ranges.size(); ++i) {
+            if (heapType != IDescriptorHeap::nativeType(descTable->m_ranges[i].m_type)) {
+                Log::Fatal(L"Different heap type entry cannot be in single descriptor table.");
+                return false;
+            }
+            if (descTable->m_lastUnbound && i == descTable->m_ranges.size() - 1) {
+                // this should be only the last one. 
+                nbEntryToAllocate += unboundDescTableCount;
+            }
+            else {
+                nbEntryToAllocate += descTable->m_ranges[i].m_descCount;
+            }
+        }
+
+        auto& heapEntry = m_apiData.m_subHeaps[(uint32_t)heapType];
+
+        if (heapEntry.m_currentOffset + nbEntryToAllocate > heapEntry.m_subAllocationSize) {
+            Log::Fatal(L"Failed to allocate descriptor table entry. NumSubAllocatedDesc:%d CurrentOffset:%d TriedToAllocate:%d", heapEntry.m_subAllocationSize, heapEntry.m_currentOffset, nbEntryToAllocate);
+            return false;
+        }
+
+        retAllocationInfo->m_numDescriptors = nbEntryToAllocate;
+        retAllocationInfo->m_incrementSize = heapEntry.m_incrementSize;
+        retAllocationInfo->m_hCPU = heapEntry.m_descHeap->GetCPUDescriptorHandleForHeapStart();
+        retAllocationInfo->m_hGPU = heapEntry.m_descHeap->GetGPUDescriptorHandleForHeapStart();
+
+        retAllocationInfo->m_hCPU.ptr += heapEntry.m_incrementSize * (heapEntry.m_currentOffset + heapEntry.m_subAllocationOffset);
+        retAllocationInfo->m_hGPU.ptr += heapEntry.m_incrementSize * (heapEntry.m_currentOffset + heapEntry.m_subAllocationOffset);
+
+        heapEntry.m_currentOffset += nbEntryToAllocate;
+
+        return true;
+    };
+
+
 #elif defined(GRAPHICS_API_VK)
 // non class enum warnings.
 #ifdef WIN32
 #pragma warning( push )
 #pragma warning( disable : 26812 )
 #endif
-    constexpr VkDescriptorType DescriptorHeap::nativeType(const DescriptorHeap::Type &type)
+    constexpr VkDescriptorType IDescriptorHeap::nativeType(const IDescriptorHeap::Type &type)
     {
         switch (type)
         {
@@ -641,9 +766,9 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
      * DescriptorSetLayout in VK
      ***************************************************************/
 #if defined(GRAPHICS_API_D3D12)
-    constexpr D3D12_DESCRIPTOR_RANGE_TYPE DescriptorTableLayout::nativeType(const DescriptorHeap::Type& type)
+    constexpr D3D12_DESCRIPTOR_RANGE_TYPE DescriptorTableLayout::nativeType(const IDescriptorHeap::Type& type)
     {
-        using Type = DescriptorHeap::Type;
+        using Type = IDescriptorHeap::Type;
 
         switch (type)
         {
@@ -682,7 +807,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         return;
     }
 
-    void DescriptorTableLayout::AddRange(DescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t )
+    void DescriptorTableLayout::AddRange(IDescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t )
     {
         if (m_lastUnbound) {
             Log::Fatal(L"It's impossible to add further range after unbound descriptor entry.");
@@ -708,9 +833,9 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 
         // check if sampler and other type of entryies are conterminate.
         {
-            D3D12_DESCRIPTOR_HEAP_TYPE heapType = DescriptorHeap::nativeType(m_ranges[0].m_type);
+            D3D12_DESCRIPTOR_HEAP_TYPE heapType = IDescriptorHeap::nativeType(m_ranges[0].m_type);
             for (size_t i = 0; i < m_ranges.size(); ++i) {
-                if (heapType != DescriptorHeap::nativeType(m_ranges[i].m_type)) {
+                if (heapType != IDescriptorHeap::nativeType(m_ranges[i].m_type)) {
                     Log::Fatal(L"Different heap type entry cannot be in single descriptor table.");
                     return false;
                 }
@@ -753,7 +878,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         SetNameInternal(m_apiData.m_device, VkObjectType::VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, (uint64_t)m_apiData.m_descriptorSetLayout, str.c_str());
     }
 
-    void DescriptorTableLayout::AddRange(DescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t offset)
+    void DescriptorTableLayout::AddRange(IDescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t offset)
     {
         if (m_lastUnbound) {
             Log::Fatal(L"It's impossible to add further range after unbound descriptor entry.");
@@ -770,7 +895,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 #else
         binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 #endif
-        binding.descriptorType = DescriptorHeap::nativeType(type);
+        binding.descriptorType = IDescriptorHeap::nativeType(type);
 
         m_apiData.m_bindings.push_back(binding);
 
@@ -831,7 +956,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         // nothing to do.
     }
 
-    bool DescriptorTable::Allocate(DescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount)
+    bool DescriptorTable::Allocate(IDescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount)
     {
         m_descTableLayout = {};
 
@@ -978,8 +1103,8 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 			nbEntriesToCopy = explicitCopySize;
 		}
 
-        D3D12_DESCRIPTOR_HEAP_TYPE srcHeapType = DescriptorHeap::nativeType(descTable->m_descTableLayout->m_ranges[0].m_type);
-        D3D12_DESCRIPTOR_HEAP_TYPE dstHeapType = DescriptorHeap::nativeType(m_descTableLayout->m_ranges[rangeIndex].m_type);
+        D3D12_DESCRIPTOR_HEAP_TYPE srcHeapType = IDescriptorHeap::nativeType(descTable->m_descTableLayout->m_ranges[0].m_type);
+        D3D12_DESCRIPTOR_HEAP_TYPE dstHeapType = IDescriptorHeap::nativeType(m_descTableLayout->m_ranges[rangeIndex].m_type);
 
         if (srcHeapType != dstHeapType) {
             Log::Fatal(L"Different heap type detected.");
@@ -1020,7 +1145,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         // it doesn't destroy allocated VkDescriptorSet from pool, since the pool will be reset at the beggining of a frame.
     }
 
-    bool DescriptorTable::Allocate(DescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount)
+    bool DescriptorTable::Allocate(IDescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount)
     {
         if (!descHeap->Allocate(descTableLayout, &m_apiData.m_heapAllocationInfo, unboundDescTableCount)) {
             Log::Fatal(L"Faild to allocate descriptor heap.");
@@ -1279,8 +1404,8 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
             nbEntriesToCopy = explicitCopySize;
         }
 
-        VkDescriptorType srcHeapType = DescriptorHeap::nativeType(descTable->m_descTableLayout->m_ranges[0].m_type);
-        VkDescriptorType dstHeapType = DescriptorHeap::nativeType(m_descTableLayout->m_ranges[rangeIndex].m_type);
+        VkDescriptorType srcHeapType = IDescriptorHeap::nativeType(descTable->m_descTableLayout->m_ranges[0].m_type);
+        VkDescriptorType dstHeapType = IDescriptorHeap::nativeType(m_descTableLayout->m_ranges[rangeIndex].m_type);
 
         if (srcHeapType != dstHeapType) {
             Log::Fatal(L"Different heap type detected.");
@@ -4357,15 +4482,11 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         return true;
     }
 
-    bool CommandList::SetDescriptorHeap(DescriptorHeap* heap)
+    bool CommandList::SetDescriptorHeap(IDescriptorHeap* heap)
     {
         std::vector<ID3D12DescriptorHeap*> descs;
-        
-        for (auto& h : heap->m_apiData.m_heaps) {
-            if (h.m_descHeap != nullptr) {
-                descs.push_back(h.m_descHeap);
-            }
-        }
+
+        heap->GetHeaps(descs);
         m_apiData.m_commandList->SetDescriptorHeaps((uint32_t)descs.size(), descs.data());
 
         return true;
@@ -4636,12 +4757,16 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         m_apiData.m_commandList->Dispatch(x, y, z);
     }
 
+#if defined(USE_PIX)
     void CommandList::BeginEvent(const std::array<uint32_t, 3>& color, const std::string& str)
     {
-#if defined(USE_PIX)
         PIXBeginEvent(m_apiData.m_commandList, PIX_COLOR((BYTE)color[0], (BYTE)color[1], (BYTE)color[2]), "%s", str.c_str());
-#endif
     }
+#else
+    void CommandList::BeginEvent(const std::array<uint32_t, 3>& , const std::string& )
+    {
+    }
+#endif
 
     void CommandList::EndEvent()
     {
@@ -4675,7 +4800,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         assert(false);
     }
 
-    bool CommandList::SetDescriptorHeap(DescriptorHeap* /*heap*/)
+    bool CommandList::SetDescriptorHeap(IDescriptorHeap* /*heap*/)
     {
         // nothing to do.
         return true;

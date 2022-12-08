@@ -130,7 +130,7 @@ namespace KickstartRT_NativeLayer
             ResourceLogger::ResourceKind bufferBlockKind, ResourceLogger::ResourceKind bufferEntryKind,
             const std::wstring& debugName);
 
-        Status DoClear(GraphicsAPI::Device* dev, GraphicsAPI::CommandList* cmdList, GraphicsAPI::DescriptorHeap* currentGPUDescHeap); // D3D12 clear op need (currently GPU Visible) GPU desc table...
+        Status DoClear(GraphicsAPI::Device* dev, GraphicsAPI::CommandList* cmdList, GraphicsAPI::IDescriptorHeap* currentGPUDescHeap); // D3D12 clear op need (currently GPU Visible) GPU desc table...
 
         Status TransitionBarrier(GraphicsAPI::CommandList* cmdList, GraphicsAPI::ResourceState::State state);
         Status UAVBarrier(GraphicsAPI::CommandList* cmdList);

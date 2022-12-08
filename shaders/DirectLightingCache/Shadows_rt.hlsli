@@ -33,7 +33,13 @@
 #include "rng.hlsl"
 
 #if KickstartRT_SDK_WITH_NRD
-#define COMPILER_DXC
+#define NRD_COMPILER_DXC
+#define NRD_USE_OCT_NORMAL_ENCODING 0
+#define NRD_USE_MATERIAL_ID 0
+
+#define NRD_NORMAL_ENCODING 0		// NRD_NORMAL_ENCODING_RGBA8_UNORM
+#define NRD_ROUGHNESS_ENCODING 1	// NRD_ROUGHNESS_ENCODING_LINEAR
+
 #include "NRD.hlsli"
 #endif
 
@@ -222,7 +228,7 @@ float TraceShadowRay(CB_Light light, float3 origin, float3 normal, inout RNGStat
 		RayQuery<RAY_FLAGS> rayQuery;
 		rayQuery.TraceRayInline(t_SceneBVH,
 			RAY_FLAGS, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			ray);
 		rayQuery.Proceed();
 
@@ -243,7 +249,7 @@ float TraceShadowRay(CB_Light light, float3 origin, float3 normal, inout RNGStat
 		TraceRay(
 			t_SceneBVH,
 			RAY_FLAGS, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			0, //RayContributionToHitGroupIndex
 			0, //MultiplierForGeometryContributionToHitGroupIndex
 			0, //MissShaderIndex

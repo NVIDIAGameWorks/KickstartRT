@@ -26,6 +26,18 @@
 #ifndef __SHARED_SHARED_HLSL__
 #define __SHARED_SHARED_HLSL__
 
+enum class InstancePropertyMask
+{
+    // Instances with this property may get 
+    DirectLightInjectionTarget  = 1u << 0u,
+
+    // Instances with this mask may be queried during light transfer operation.
+    LightTransferSource          = 1u << 1u,
+
+    // These instances may be invisible during tracing operations
+    Visible                      = 1u << 2u,
+};
+
 #if KICKSTARTRT_USE_BYTEADDRESSBUFFER_FOR_DLC
 typedef RWByteAddressBuffer DLCBufferType;
 typedef uint DLCBufferIndex;
