@@ -97,7 +97,7 @@ Kickstart is built using CMake, so the build instructions are pretty standard.
 
 ##### Windows build instructions
 1. Clone the repository  
-  `git clone –recursive https://github.com/NVIDIAGameWorks/KickstartRT`
+  `git clone –-recursive https://github.com/NVIDIAGameWorks/KickstartRT`
 2. Set up dependent libraries  
    - Windows SDK  
      You can download and install from [here](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/).      
@@ -118,7 +118,7 @@ You can use CMake GUI to configure project files. You can set the destination fo
 ##### Linux build instructions
 
 1. Clone the repository recursively  
-  `git clone –recursive https://github.com/NVIDIAGameWorks/KickstartRT`
+  `git clone –-recursive https://github.com/NVIDIAGameWorks/KickstartRT`
 
 2. Download and install the Vulkan SDK [here](https://www.lunarg.com/vulkan-sdk/). If built from sources, remember to run the `setup_env.sh` script to set up the required environment variables.
 
