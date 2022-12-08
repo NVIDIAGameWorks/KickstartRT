@@ -25,7 +25,13 @@
 #include "Shared/Binding.hlsli"
 
 #if KickstartRT_SDK_WITH_NRD
-#define COMPILER_DXC
+#define NRD_COMPILER_DXC
+#define NRD_USE_OCT_NORMAL_ENCODING 0
+#define NRD_USE_MATERIAL_ID 0
+
+#define NRD_NORMAL_ENCODING 0       // NRD_NORMAL_ENCODING_RGBA8_UNORM
+#define NRD_ROUGHNESS_ENCODING 1    // NRD_ROUGHNESS_ENCODING_LINEAR
+
 #include "NRD.hlsli"
 
 #define REFLECTION_OUTPUT_MODE_NRD_REBLUR_SPEC (0)		// DenoisingMode::NRD_ReblurSpec
@@ -77,7 +83,7 @@ struct CB_NRDConvertInputs
     float4  roughnessMask;
     float4  hitTMask;
 
-    float   metersToUnitsMultiplier;
+    float   pad9_0;
     uint    pad9;
     uint    pad10;
     uint    pad11;
@@ -185,8 +191,8 @@ void _WriteRadianceAndHitT(Texture2D<float4> t_radianceAndHitT, RWTexture2D<floa
     const float hitT = radianceAndHitT.w;
 
     if (g_CB.method == DenoisingMethod::NRD_Reblur) {
-        const float normHitDist = REBLUR_FrontEnd_GetNormHitDist(hitT, viewZ, g_CB.nrdHitDistanceParameters, g_CB.metersToUnitsMultiplier, linearRoughness);
-        u_packedRadianceAndHitT[globalIdx] = REBLUR_FrontEnd_PackRadianceAndHitDist(radiance, hitT);
+        const float normHitDist = REBLUR_FrontEnd_GetNormHitDist(hitT, viewZ, g_CB.nrdHitDistanceParameters, linearRoughness);
+        u_packedRadianceAndHitT[globalIdx] = REBLUR_FrontEnd_PackRadianceAndNormHitDist(radiance, normHitDist);
     }
     else if (g_CB.method == DenoisingMethod::NRD_Relax) {
         u_packedRadianceAndHitT[globalIdx] = RELAX_FrontEnd_PackRadianceAndHitDist(radiance, hitT);
@@ -199,7 +205,7 @@ void _WriteOcclusion(Texture2D<float4> t_occlusionHitT, RWTexture2D<float4> u_Pa
         hitT = 65504.f;
 
     if (g_CB.method == DenoisingMethod::NRD_Reblur) {
-        u_PackedOcclusion[globalIdx].x = REBLUR_FrontEnd_GetNormHitDist(hitT, viewZ, g_CB.nrdHitDistanceParameters, g_CB.metersToUnitsMultiplier, linearRoughness);
+        u_PackedOcclusion[globalIdx].x = REBLUR_FrontEnd_GetNormHitDist(hitT, viewZ, g_CB.nrdHitDistanceParameters, linearRoughness);
     }
 }
 

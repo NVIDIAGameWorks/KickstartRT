@@ -104,7 +104,7 @@ namespace KickstartRT_NativeLayer
     }
 
     namespace Utils {
-        void LogGeometryInput(const BVHTask::GeometryInput *input);
+        void LogGeometryInput(const BVHTask::GeometryInput* input);
 
         bool CheckInputTextureState(GraphicsAPI::CommandList* cmdList, const RenderTask::ShaderResourceTex* inputTex, GraphicsAPI::ResourceState::State expectedState);
         bool CheckInputTextureState(GraphicsAPI::CommandList* cmdList, const RenderTask::UnorderedAccessTex* inputTex, GraphicsAPI::ResourceState::State expectedState);

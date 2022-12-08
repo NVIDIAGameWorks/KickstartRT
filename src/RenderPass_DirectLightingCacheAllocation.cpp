@@ -117,106 +117,116 @@ namespace KickstartRT_NativeLayer
 
 	Status RenderPass_DirectLightingCacheAllocation::CheckInputs(const BVHTask::GeometryInput& input)
 	{
-		auto& vb(input.vertexBuffer);
-
 		Status sts = Status::OK;
 
 		for (;;) {
-#if defined(GRAPHICS_API_D3D12)
-			if (vb.format != DXGI_FORMAT_R32G32B32_FLOAT) {
-				Log::Error(L"Unsupported vertex buffer format detected.");
+			if (input.components.size() == 0) {
+				Log::Error(L"There is no geometry compont.");
 				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 				break;
 			}
-#elif defined(GRAPHICS_API_VK)
-			if (vb.format != VK_FORMAT_R32G32B32_SFLOAT) {
-				Log::Error(L"Unsupported vertex buffer format detected.");
-				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-				break;
-			}
-#endif
-
+		
 			if (input.forceDirectTileMapping && input.surfelType == BVHTask::GeometryInput::SurfelType::MeshColors) {
 				Log::Error(L"forceDirectTileMapping is not compatible with MeshColors.");
 				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 				break;
 			}
 
-			if (vb.offsetInBytes % sizeof(float) != 0 ||
-				vb.strideInBytes % sizeof(float) != 0) {
-				Log::Error(L"Vertex offset and strides didn't meet the alignment requirement.");
-				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-				break;
-			}
-
-			if (input.type == BVHTask::GeometryInput::Type::Triangles) {
-				if (vb.count % 3 != 0) {
-					Log::Error(L"Number of vertices must be multiple of 3 since it's a triangles %d", vb.count);
-					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-					break;
-				}
-			}
-			else if (input.type == BVHTask::GeometryInput::Type::TrianglesIndexed) {
-				auto& ib(input.indexBuffer);
-
-				if (ib.count % 3 != 0) {
-					Log::Error(L"Number of indices must be multiple of 3 since it's a triangle list %d", ib.count);
-					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-					break;
-				}
+			for (size_t i = 0; i < input.components.size(); ++i) {
+				const auto& cmp(input.components[i]);
+				const auto& vb(cmp.vertexBuffer);
 
 #if defined(GRAPHICS_API_D3D12)
-				if (ib.format != DXGI_FORMAT_R32_UINT &&
-					ib.format != DXGI_FORMAT_R16_UINT) {
-					Log::Error(L"Unsupported index buffer format detected.");
-					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-					break;
-				}
-				if ((ib.format == DXGI_FORMAT_R32_UINT && ib.offsetInBytes % sizeof(uint32_t) != 0) ||
-					(ib.format == DXGI_FORMAT_R16_UINT && ib.offsetInBytes % sizeof(uint16_t) != 0)) {
-					Log::Error(L"Index offset didn't meet the alignment requirement.");
+				if (vb.format != DXGI_FORMAT_R32G32B32_FLOAT) {
+					Log::Error(L"Unsupported vertex buffer format detected.");
 					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 					break;
 				}
 #elif defined(GRAPHICS_API_VK)
-				if (ib.format != VK_FORMAT_R32_UINT &&
-					ib.format != VK_FORMAT_R16_UINT) {
-					Log::Error(L"Unsupported index buffer format detected.");
-					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-					break;
-				}
-				if ((ib.format == VK_FORMAT_R32_UINT && ib.offsetInBytes % sizeof(uint32_t) != 0) ||
-					(ib.format == VK_FORMAT_R16_UINT && ib.offsetInBytes % sizeof(uint16_t) != 0)) {
-					Log::Error(L"Index offset didn't meet the alignment requirement.");
+				if (vb.format != VK_FORMAT_R32G32B32_SFLOAT) {
+					Log::Error(L"Unsupported vertex buffer format detected.");
 					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 					break;
 				}
 #endif
 
-				if (input.indexRange.isEnabled) {
-					if (input.indexRange.maxIndex < input.indexRange.minIndex) {
-						Log::Error(L"Invalid index range detected.");
-						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-						break;
-					}
-					if (input.indexRange.maxIndex >= vb.count) {
-						Log::Error(L"Index range exceeded vertex buffer size.");
+				if (vb.offsetInBytes % sizeof(float) != 0 ||
+					vb.strideInBytes % sizeof(float) != 0) {
+					Log::Error(L"Vertex offset and strides didn't meet the alignment requirement.");
+					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+					break;
+				}
+
+				if (input.type == BVHTask::GeometryInput::Type::Triangles) {
+					if (vb.count % 3 != 0) {
+						Log::Error(L"Number of vertices must be multiple of 3 since it's a triangles %d", vb.count);
 						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 						break;
 					}
 				}
+				else if (input.type == BVHTask::GeometryInput::Type::TrianglesIndexed) {
+					const auto& ib(cmp.indexBuffer);
+
+					if (ib.count % 3 != 0) {
+						Log::Error(L"Number of indices must be multiple of 3 since it's a triangle list %d", ib.count);
+						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+						break;
+					}
+
+#if defined(GRAPHICS_API_D3D12)
+					if (ib.format != DXGI_FORMAT_R32_UINT &&
+						ib.format != DXGI_FORMAT_R16_UINT) {
+						Log::Error(L"Unsupported index buffer format detected.");
+						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+						break;
+					}
+					if ((ib.format == DXGI_FORMAT_R32_UINT && ib.offsetInBytes % sizeof(uint32_t) != 0) ||
+						(ib.format == DXGI_FORMAT_R16_UINT && ib.offsetInBytes % sizeof(uint16_t) != 0)) {
+						Log::Error(L"Index offset didn't meet the alignment requirement.");
+						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+						break;
+					}
+#elif defined(GRAPHICS_API_VK)
+					if (ib.format != VK_FORMAT_R32_UINT &&
+						ib.format != VK_FORMAT_R16_UINT) {
+						Log::Error(L"Unsupported index buffer format detected.");
+						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+						break;
+					}
+					if ((ib.format == VK_FORMAT_R32_UINT && ib.offsetInBytes % sizeof(uint32_t) != 0) ||
+						(ib.format == VK_FORMAT_R16_UINT && ib.offsetInBytes % sizeof(uint16_t) != 0)) {
+						Log::Error(L"Index offset didn't meet the alignment requirement.");
+						sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+						break;
+					}
+#endif
+
+					if (cmp.indexRange.isEnabled) {
+						if (cmp.indexRange.maxIndex < cmp.indexRange.minIndex) {
+							Log::Error(L"Invalid index range detected.");
+							sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+							break;
+						}
+						if (cmp.indexRange.maxIndex >= vb.count) {
+							Log::Error(L"Index range exceeded vertex buffer size.");
+							sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+							break;
+						}
+					}
+				}
+				else {
+					Log::Error(L"Unsupported input geometry type detected.");
+					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+					break;
+				}
 			}
-			else {
-				Log::Error(L"Unsupported input geometry type detected.");
-				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-				break;
-			}
+
 			break;
-		};
+		}
 
 		if (sts != Status::OK) {
 			// Output some more info for invalid geometry inputs.
-			Log::Info(L"---- RegisterGeometryInputs ----");
+			Log::Info(L"---- Invalid inputs for RegisterGeometry ----");
 			Utils::LogGeometryInput(&input);
 		}
 
@@ -240,17 +250,30 @@ namespace KickstartRT_NativeLayer
 				break;
 			}
 
-			if (oldInput.vertexBuffer.count != input.vertexBuffer.count) {
-				Log::Error(L"Vertex count didn't match when updating a geometry.");
+			if (oldInput.components.size() != input.components.size()) {
+				Log::Error(L"Different number of geometry component was set for update.");
 				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
 				break;
 			}
-			if (oldInput.indexRange.isEnabled != input.indexRange.isEnabled ||
-				oldInput.indexRange.minIndex != input.indexRange.minIndex ||
-				oldInput.indexRange.maxIndex != input.indexRange.maxIndex) {
-				Log::Error(L"IndexRange didn't match when updating a geometry.");
-				sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
-				break;
+
+			for (size_t i= 0; i < oldInput.components.size(); ++i) {
+				const auto& oldCmp(oldInput.components[i]);
+				const auto& oldVb(oldCmp.vertexBuffer);
+				const auto& cmp(input.components[i]);
+				const auto& vb(cmp.vertexBuffer);
+
+				if (oldVb.count != vb.count) {
+					Log::Error(L"Vertex count didn't match when updating a geometry.");
+					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+					break;
+				}
+				if (oldCmp.indexRange.isEnabled != cmp.indexRange.isEnabled ||
+					oldCmp.indexRange.minIndex != cmp.indexRange.minIndex ||
+					oldCmp.indexRange.maxIndex != cmp.indexRange.maxIndex) {
+					Log::Error(L"IndexRange didn't match when updating a geometry.");
+					sts = Status::ERROR_INVALID_GEOMETRY_INPUTS;
+					break;
+				}
 			}
 
 			break;
@@ -258,9 +281,9 @@ namespace KickstartRT_NativeLayer
 
 		if (sts != Status::OK) {
 			// Output some more info for invalid geometry inputs.
-			Log::Info(L"---- Inputs for creating the geometry ----");
+			Log::Info(L"---- Invalid inputs for updating a geometry (original inputs) ----");
 			Utils::LogGeometryInput(&oldInput);
-			Log::Info(L"---- Inputs for updating the geometry ----");
+			Log::Info(L"---- Invalid inputs for updating a geometry (inputs for updating) ----");
 			Utils::LogGeometryInput(&input);
 		}
 
@@ -277,29 +300,47 @@ namespace KickstartRT_NativeLayer
 		for (auto gp : addedGeometries) {
 			auto& input(gp->m_input);
 
-			auto& vIn(input.vertexBuffer);
-			auto& iIn(input.indexBuffer);
+			gp->m_totalNbIndices = 0;
+			gp->m_totalNbVertices = 0;
+			gp->m_vertexOffsets.clear();
+			gp->m_indexOffsets.clear();
+			for (auto&& cmp : input.components) {
+				auto& vIn(cmp.vertexBuffer);
+				auto& iIn(cmp.indexBuffer);
 
-			if (input.type == BVHTask::GeometryInput::Type::Triangles) {
-				// Triangles will have a flatten index buffer for supporting update geometry with reordering edges by those lengths.
-				iIn.count = vIn.count;
-				iIn.offsetInBytes = 0;
+				gp->m_indexOffsets.push_back(gp->m_totalNbIndices);
+				gp->m_vertexOffsets.push_back(gp->m_totalNbVertices);
+
+				if (input.type == BVHTask::GeometryInput::Type::Triangles) {
+					// Triangles will have a flatten index buffer for supporting update geometry with reordering edges by those lengths.
+					gp->m_totalNbIndices += vIn.count;
+					iIn.offsetInBytes = 0;
 #if defined(GRAPHICS_API_D3D12)
-				iIn.format = DXGI_FORMAT_R32_UINT;
-				iIn.resource = nullptr;
+					iIn.format = DXGI_FORMAT_R32_UINT;
+					iIn.resource = nullptr;
 #elif defined(GRAPHICS_API_VK)
-				iIn.format = VK_FORMAT_R32_UINT;
-				iIn.typedBuffer = nullptr;
+					iIn.format = VK_FORMAT_R32_UINT;
+					iIn.typedBuffer = nullptr;
 #endif
+					gp->m_totalNbVertices += vIn.count;
+				}
+				else {
+					gp->m_totalNbIndices += iIn.count;
+
+					if (cmp.indexRange.isEnabled)
+						gp->m_totalNbVertices += cmp.indexRange.maxIndex - cmp.indexRange.minIndex + 1;
+					else
+						gp->m_totalNbVertices += vIn.count;
+				}
 			}
 
 			// Create an unified buffer for index and vertx arrays.
 			{
-				size_t idxSizeInBytes = GraphicsAPI::ALIGN((size_t)16, (size_t)iIn.count * sizeof(uint32_t));
-				size_t vtxSizeInBytes = GraphicsAPI::ALIGN((size_t)16, (size_t)vIn.count * 3 * sizeof(float));
+				size_t idxSizeInBytes = GraphicsAPI::ALIGN((size_t)16, (size_t)gp->m_totalNbIndices * sizeof(uint32_t));
+				size_t vtxSizeInBytes = GraphicsAPI::ALIGN((size_t)16, (size_t)gp->m_totalNbVertices * 3 * sizeof(float));
 
-				const uint32_t faceCount = iIn.count / 3;
-				const uint32_t maxEdgeCount = iIn.count;
+				const uint32_t faceCount = gp->m_totalNbIndices / 3;
+				const uint32_t maxEdgeCount = gp->m_totalNbIndices;
 
 				// use persistent allocator if allow update is enabled.
 				decltype(pws->m_sharedBufferForVertexTemporal)::element_type* allocator = nullptr;
@@ -311,14 +352,12 @@ namespace KickstartRT_NativeLayer
 				}
 				gp->m_index_vertexBuffer = allocator->Allocate(pws, idxSizeInBytes+ vtxSizeInBytes, true);
 				if (!gp->m_index_vertexBuffer) {
-					Log::Fatal(L"Failed to allocate a index_vertex buffer NvIdcs:%d, NbVerts:%d", iIn.count, vIn.count);
+					Log::Fatal(L"Failed to allocate a index_vertex buffer NvIdcs:%d, NbVerts:%d", gp->m_totalNbIndices, gp->m_totalNbVertices);
 					Log::Info(L"---- Inputs for the geometry ----");
 					Utils::LogGeometryInput(&input);
 					return (Status::ERROR_INTERNAL);
 				}
 			
-				gp->m_nbVertexIndices = iIn.count;
-				gp->m_nbVertices = vIn.count;
 				gp->m_vertexBufferOffsetInBytes = idxSizeInBytes;
 
 				// Allocate edge table buffer and DLC cahce indices here for MeshColors.
@@ -343,7 +382,7 @@ namespace KickstartRT_NativeLayer
 
 			// Don't calculate number of tiles in force direct tile mapping mode.
 			if (! gp->m_input.forceDirectTileMapping) {
-				uint32_t nbPrims = iIn.count / 3;
+				uint32_t nbPrims = gp->m_totalNbIndices / 3;
 
 				// allocate tile buffer index, offset
 				// nbPrim * 64bit
@@ -385,16 +424,21 @@ namespace KickstartRT_NativeLayer
 #if defined(GRAPHICS_API_D3D12)
 		// Check input resource states with debug command list.
 		if (cmdList->HasDebugCommandList() && addedGeometries.size() > 0) {
-			std::vector<ID3D12Resource*>		resArr(addedGeometries.size() * 2);
-			std::vector<D3D12_RESOURCE_STATES>	stateArr(addedGeometries.size() * 2);
-			size_t idx = 0;
+			std::vector<ID3D12Resource*>		resArr;
+			std::vector<D3D12_RESOURCE_STATES>	stateArr;
+			resArr.reserve(addedGeometries.size() * 4);
+			stateArr.reserve(addedGeometries.size() * 4);
 			constexpr D3D12_RESOURCE_STATES assertedState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 			for (auto&& gp : addedGeometries) {
 
-				resArr[idx] = gp->m_input.indexBuffer.resource;
-				stateArr[idx++] = assertedState;
-				resArr[idx] = gp->m_input.vertexBuffer.resource;
-				stateArr[idx++] = assertedState;
+				for (auto&& cmp : gp->m_input.components) {
+					if (gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed) {
+						resArr.push_back(cmp.indexBuffer.resource);
+						stateArr.push_back(assertedState);
+					}
+					resArr.push_back(cmp.vertexBuffer.resource);
+					stateArr.push_back(assertedState);
+				}
 			}
 			if (!cmdList->AssertResourceStates(resArr.data(), resArr.size(), stateArr.data())) {
 				Log::Fatal(L"Invalid resource state deteted while registering geometries. Expected state is: %d", assertedState);
@@ -413,11 +457,11 @@ namespace KickstartRT_NativeLayer
 				gp->m_edgeTableBuffer->RegisterClear();
 			}
 		}
-		if (pws->m_sharedBufferForCounter->DoClear(&dev, cmdList, &fws->m_CBVSRVUAVHeap) != Status::OK) {
+		if (pws->m_sharedBufferForCounter->DoClear(&dev, cmdList, fws->m_CBVSRVUAVHeap.get()) != Status::OK) {
 			Log::Fatal(L"Failed to clear shared counter buffer.");
 			return (Status::ERROR_INTERNAL);
 		}
-		if (pws->m_sharedBufferForDirectLightingCacheTemp->DoClear(&dev, cmdList, &fws->m_CBVSRVUAVHeap) != Status::OK) {
+		if (pws->m_sharedBufferForDirectLightingCacheTemp->DoClear(&dev, cmdList, fws->m_CBVSRVUAVHeap.get()) != Status::OK) {
 			Log::Fatal(L"Failed to clear shared mesh color buffer.");
 			return (Status::ERROR_INTERNAL);
 		}
@@ -542,20 +586,22 @@ namespace KickstartRT_NativeLayer
 #if defined(GRAPHICS_API_D3D12)
 		// Check input resource states with debug command list.
 		if (cmdList->HasDebugCommandList() && updatedGeometries.size() > 0) {
-			std::vector<ID3D12Resource*>		resArr(updatedGeometries.size());
-			std::vector<D3D12_RESOURCE_STATES>	stateArr(updatedGeometries.size());
+			std::vector<ID3D12Resource*>		resArr;
+			std::vector<D3D12_RESOURCE_STATES>	stateArr;
+			resArr.reserve(updatedGeometries.size() * 2);
+			stateArr.reserve(updatedGeometries.size() * 2);
 			constexpr D3D12_RESOURCE_STATES assertedState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-
-			size_t idx = 0;
 			for (auto&& gp : updatedGeometries) {
-
-				resArr[idx] = gp->m_input.indexBuffer.resource;
-				stateArr[idx++] = assertedState;
+				for (auto&& cmp : gp->m_input.components) {
+					resArr.push_back(cmp.vertexBuffer.resource);
+					stateArr.push_back(assertedState);
+				}
 			}
 			if (!cmdList->AssertResourceStates(resArr.data(), resArr.size(), stateArr.data())) {
-				Log::Fatal(L"Invalid resource state deteted while updating geometries. Expected state is: %d", assertedState);
+				Log::Fatal(L"Invalid resource state deteted while registering geometries. Expected state is: %d", assertedState);
 				return (Status::ERROR_INTERNAL);
 			}
+
 		}
 #endif
 
@@ -590,225 +636,249 @@ namespace KickstartRT_NativeLayer
 		PersistentWorkingSet* pws(fws->m_persistentWorkingSet);
 		auto& dev(pws->m_device);
 
-		GraphicsAPI::DescriptorTable	descTable;
-		if (!descTable.Allocate(&fws->m_CBVSRVUAVHeap, &m_descTableLayout)) {
-			Log::Fatal(L"Faild to allocate a portion of desc heap.");
-			return Status::ERROR_INTERNAL;
-		}
+		for (size_t cmpIdx = 0; cmpIdx < gp->m_input.components.size(); ++cmpIdx) {
+			const auto& cmp(gp->m_input.components[cmpIdx]);
 
-		GraphicsAPI::ConstantBufferView cbv;
-		void* cbPtrForWrite;
-		RETURN_IF_STATUS_FAILED(fws->m_volatileConstantBuffer.Allocate(sizeof(CB), &cbv, &cbPtrForWrite));
+			GraphicsAPI::DescriptorTable	descTable;
+			if (!descTable.Allocate(fws->m_CBVSRVUAVHeap.get(), &m_descTableLayout)) {
+				Log::Fatal(L"Faild to allocate a portion of desc heap.");
+				return Status::ERROR_INTERNAL;
+			}
 
-		uint32_t nbDispatchThreadGroups = GraphicsAPI::ROUND_UP(gp->m_input.indexBuffer.count, m_threadDim_X);
-		if (op == BuildOp::VertexUpdate)
-			nbDispatchThreadGroups = GraphicsAPI::ROUND_UP(gp->GetVertexCountAfterTransform(), m_threadDim_X);
+			GraphicsAPI::ConstantBufferView cbv;
+			void* cbPtrForWrite;
+			RETURN_IF_STATUS_FAILED(fws->m_volatileConstantBuffer.Allocate(sizeof(CB), &cbv, &cbPtrForWrite));
+
+			uint32_t nbDispatchThreadGroups = 0;
+			if (gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed)
+				nbDispatchThreadGroups = GraphicsAPI::ROUND_UP(cmp.indexBuffer.count, m_threadDim_X);
+			else if (gp->m_input.type == BVHTask::GeometryInput::Type::Triangles)
+				nbDispatchThreadGroups = GraphicsAPI::ROUND_UP(cmp.vertexBuffer.count, m_threadDim_X);
+			else {
+				Log::Fatal(L"Unsupported input type detected.");
+				return Status::ERROR_INTERNAL;
+			}
+
+			if (op == BuildOp::VertexUpdate) {
+				uint32_t vertexCnt = cmp.vertexBuffer.count;
+
+				if (cmp.indexRange.isEnabled)
+					vertexCnt = cmp.indexRange.maxIndex - cmp.indexRange.minIndex + 1;
+
+				nbDispatchThreadGroups = GraphicsAPI::ROUND_UP(vertexCnt, m_threadDim_X);
+			}
 
 #if defined(GRAPHICS_API_D3D12)
-		bool is32BitIdcs = gp->m_input.indexBuffer.format == DXGI_FORMAT_R32_UINT ? true : false;
+			bool is32BitIdcs = cmp.indexBuffer.format == DXGI_FORMAT_R32_UINT ? true : false;
 #elif defined(GRAPHICS_API_VK)
-		bool is32BitIdcs = gp->m_input.indexBuffer.format == VK_FORMAT_R32_UINT ? true : false;
+			bool is32BitIdcs = cmp.indexBuffer.format == VK_FORMAT_R32_UINT ? true : false;
 #endif
 
-		//  TileCacheBuild,
-		// 	MeshColorBuild,
-		// 	MeshColorPostBuild,
-		// 	VertexUpdate,
-		GraphicsAPI::ComputePipelineState* psoPtr = nullptr;
-		{
-			// allocation
-			size_t permutationIdx = uint32_t(op);
-			permutationIdx += gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed ? (size_t)AllocationShaderPermutationBits::e_USE_VERTEX_INDEX_INPUTS : 0 ;
-			psoPtr = m_pso_allocate_itr[permutationIdx]->GetCSPSO(pws);
-		}
-
-		if (psoPtr != *currentPSO) {
-			cmdList->SetComputePipelineState(psoPtr);
-			*currentPSO = psoPtr;
-		}
-
-		// input vertex buffer
-		uint32_t	vtxSRV_OffsetElm = 0; // VK needs 16 byte alignment for SRV offset;
-		{
-			std::unique_ptr<GraphicsAPI::ShaderResourceView> srv = std::make_unique<GraphicsAPI::ShaderResourceView>();
-			uint64_t totalOffsetInBytes = gp->m_input.vertexBuffer.offsetInBytes;
-			uint64_t totalSizeInBytes = (uint64_t)gp->m_input.vertexBuffer.count * gp->m_input.vertexBuffer.strideInBytes;
-
-			// adjust SRV range if indexRange is enabled.
-			if (gp->m_input.indexRange.isEnabled) {
-				totalOffsetInBytes += gp->m_input.indexRange.minIndex * gp->m_input.vertexBuffer.strideInBytes;
-				totalSizeInBytes = (uint64_t)(gp->m_input.indexRange.maxIndex - gp->m_input.indexRange.minIndex + 1) * gp->m_input.vertexBuffer.strideInBytes;
-			}
-			
-#if defined(GRAPHICS_API_D3D12)
+			//  TileCacheBuild,
+			// 	MeshColorBuild,
+			// 	MeshColorPostBuild,
+			// 	VertexUpdate,
+			GraphicsAPI::ComputePipelineState* psoPtr = nullptr;
 			{
-				D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc =
-					GraphicsAPI::Utils::BufferResourceViewDesc_R32F(
-						totalOffsetInBytes / sizeof(float),
-						(uint32_t)(totalSizeInBytes / sizeof(float)));
-
-				srv->InitFromApiData(gp->m_input.vertexBuffer.resource, &srvDesc);
+				// allocation
+				size_t permutationIdx = uint32_t(op);
+				permutationIdx += gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed ? (size_t)AllocationShaderPermutationBits::e_USE_VERTEX_INDEX_INPUTS : 0;
+				psoPtr = m_pso_allocate_itr[permutationIdx]->GetCSPSO(pws);
 			}
-#elif defined(GRAPHICS_API_VK)
+
+			if (psoPtr != *currentPSO) {
+				cmdList->SetComputePipelineState(psoPtr);
+				*currentPSO = psoPtr;
+			}
+
+			// input vertex buffer
+			uint32_t	vtxSRV_OffsetElm = 0; // VK needs 16 byte alignment for SRV offset;
 			{
-				// SRV offset adjustment.
-				assert(totalOffsetInBytes % 4 == 0);
-				uint64_t negOffsetInBytes = totalOffsetInBytes % 16;
+				std::unique_ptr<GraphicsAPI::ShaderResourceView> srv = std::make_unique<GraphicsAPI::ShaderResourceView>();
+				uint64_t totalOffsetInBytes = cmp.vertexBuffer.offsetInBytes;
+				uint64_t totalSizeInBytes = (uint64_t)cmp.vertexBuffer.count * cmp.vertexBuffer.strideInBytes;
 
-				vtxSRV_OffsetElm = (uint32_t)negOffsetInBytes/sizeof(float);
-				totalOffsetInBytes -= negOffsetInBytes;
-				totalSizeInBytes += negOffsetInBytes;
-
-				if (!srv->InitFromApiData(&dev, gp->m_input.vertexBuffer.typedBuffer, VK_FORMAT_R32_SFLOAT,
-					totalOffsetInBytes, totalSizeInBytes)) {
-					Log::Fatal(L"Failed to create a SRV");
-					return Status::ERROR_INTERNAL;
+				// adjust SRV range if indexRange is enabled.
+				if (cmp.indexRange.isEnabled) {
+					totalOffsetInBytes += cmp.indexRange.minIndex * cmp.vertexBuffer.strideInBytes;
+					totalSizeInBytes = (uint64_t)(cmp.indexRange.maxIndex - cmp.indexRange.minIndex + 1) * cmp.vertexBuffer.strideInBytes;
 				}
-			}
-#endif
-			descTable.SetSrv(&dev, 1, 0, srv.get()); // t0, heap offset: 1, tableLayout(1, 0)
-			pws->DeferredRelease(std::move(srv)); //this object will be destrcuted after the current frame fence term.
-		}
-
-		// input index buffer
-		uint32_t	idxSRV_OffsetElm = 0; // VK needs 16 byte alignment for SRV offset;
-		if (gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed && (op != BuildOp::VertexUpdate)) {
-			std::unique_ptr<GraphicsAPI::ShaderResourceView> srv = std::make_unique<GraphicsAPI::ShaderResourceView>();
 
 #if defined(GRAPHICS_API_D3D12)
-			{
-				if (is32BitIdcs) {
+				{
 					D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc =
-						GraphicsAPI::Utils::BufferResourceViewDesc_R32U(
-							gp->m_input.indexBuffer.offsetInBytes / sizeof(uint32_t),
-							gp->m_input.indexBuffer.count);
-					srv->InitFromApiData(gp->m_input.indexBuffer.resource, &srvDesc);
+						GraphicsAPI::Utils::BufferResourceViewDesc_R32F(
+							totalOffsetInBytes / sizeof(float),
+							(uint32_t)(totalSizeInBytes / sizeof(float)));
+
+					srv->InitFromApiData(cmp.vertexBuffer.resource, &srvDesc);
 				}
-				else {
-					D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc =
-						GraphicsAPI::Utils::BufferResourceViewDesc_R16U(
-							gp->m_input.indexBuffer.offsetInBytes / sizeof(uint16_t),
-							gp->m_input.indexBuffer.count);
-					srv->InitFromApiData(gp->m_input.indexBuffer.resource, &srvDesc);
-				}
-			}
 #elif defined(GRAPHICS_API_VK)
-			{
-				if (is32BitIdcs) {
+				{
 					// SRV offset adjustment.
-					uint64_t totalOffsetInBytes = gp->m_input.indexBuffer.offsetInBytes;
-					uint64_t totalSizeInBytes = (uint64_t)gp->m_input.indexBuffer.count * sizeof(uint32_t);
 					assert(totalOffsetInBytes % 4 == 0);
 					uint64_t negOffsetInBytes = totalOffsetInBytes % 16;
-					
-					idxSRV_OffsetElm = (uint32_t)negOffsetInBytes / sizeof(uint32_t);
+
+					vtxSRV_OffsetElm = (uint32_t)negOffsetInBytes / sizeof(float);
 					totalOffsetInBytes -= negOffsetInBytes;
 					totalSizeInBytes += negOffsetInBytes;
 
-					if (!srv->InitFromApiData(&dev, gp->m_input.indexBuffer.typedBuffer,
-						VK_FORMAT_R32_UINT, totalOffsetInBytes, totalSizeInBytes)) {
+					if (!srv->InitFromApiData(&dev, cmp.vertexBuffer.typedBuffer, VK_FORMAT_R32_SFLOAT,
+						totalOffsetInBytes, totalSizeInBytes)) {
 						Log::Fatal(L"Failed to create a SRV");
 						return Status::ERROR_INTERNAL;
 					}
 				}
-				else {
-					// SRV offset adjustment.
-					uint64_t totalOffsetInBytes = gp->m_input.indexBuffer.offsetInBytes;
-					uint64_t totalSizeInBytes = (uint64_t)gp->m_input.indexBuffer.count * sizeof(uint16_t);
-					assert(totalOffsetInBytes % 2 == 0);
-					uint64_t negOffsetInBytes = totalOffsetInBytes % 16;
-
-					idxSRV_OffsetElm = (uint32_t)negOffsetInBytes / sizeof(uint16_t);
-					totalOffsetInBytes -= negOffsetInBytes;
-					totalSizeInBytes += negOffsetInBytes;
-
-					if (!srv->InitFromApiData(&dev, gp->m_input.indexBuffer.typedBuffer,
-						VK_FORMAT_R16_UINT, totalOffsetInBytes, totalSizeInBytes)) {
-						Log::Fatal(L"Failed to create a SRV");
-						return Status::ERROR_INTERNAL;
-					}
-				}
+#endif
+				descTable.SetSrv(&dev, 1, 0, srv.get()); // t0, heap offset: 1, tableLayout(1, 0)
+				pws->DeferredRelease(std::move(srv)); // This object will be destrcuted after finishing the GPU task.
 			}
+
+			// input index buffer
+			uint32_t	idxSRV_OffsetElm = 0; // VK needs 16 byte alignment for SRV offset;
+			if (gp->m_input.type == BVHTask::GeometryInput::Type::TrianglesIndexed && (op != BuildOp::VertexUpdate)) {
+				std::unique_ptr<GraphicsAPI::ShaderResourceView> srv = std::make_unique<GraphicsAPI::ShaderResourceView>();
+
+#if defined(GRAPHICS_API_D3D12)
+				{
+					if (is32BitIdcs) {
+						D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc =
+							GraphicsAPI::Utils::BufferResourceViewDesc_R32U(
+								cmp.indexBuffer.offsetInBytes / sizeof(uint32_t),
+								cmp.indexBuffer.count);
+						srv->InitFromApiData(cmp.indexBuffer.resource, &srvDesc);
+					}
+					else {
+						D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc =
+							GraphicsAPI::Utils::BufferResourceViewDesc_R16U(
+								cmp.indexBuffer.offsetInBytes / sizeof(uint16_t),
+								cmp.indexBuffer.count);
+						srv->InitFromApiData(cmp.indexBuffer.resource, &srvDesc);
+					}
+				}
+#elif defined(GRAPHICS_API_VK)
+				{
+					if (is32BitIdcs) {
+						// SRV offset adjustment.
+						uint64_t totalOffsetInBytes = cmp.indexBuffer.offsetInBytes;
+						uint64_t totalSizeInBytes = (uint64_t)cmp.indexBuffer.count * sizeof(uint32_t);
+						assert(totalOffsetInBytes % 4 == 0);
+						uint64_t negOffsetInBytes = totalOffsetInBytes % 16;
+
+						idxSRV_OffsetElm = (uint32_t)negOffsetInBytes / sizeof(uint32_t);
+						totalOffsetInBytes -= negOffsetInBytes;
+						totalSizeInBytes += negOffsetInBytes;
+
+						if (!srv->InitFromApiData(&dev, cmp.indexBuffer.typedBuffer,
+							VK_FORMAT_R32_UINT, totalOffsetInBytes, totalSizeInBytes)) {
+							Log::Fatal(L"Failed to create a SRV");
+							return Status::ERROR_INTERNAL;
+						}
+					}
+					else {
+						// SRV offset adjustment.
+						uint64_t totalOffsetInBytes = cmp.indexBuffer.offsetInBytes;
+						uint64_t totalSizeInBytes = (uint64_t)cmp.indexBuffer.count * sizeof(uint16_t);
+						assert(totalOffsetInBytes % 2 == 0);
+						uint64_t negOffsetInBytes = totalOffsetInBytes % 16;
+
+						idxSRV_OffsetElm = (uint32_t)negOffsetInBytes / sizeof(uint16_t);
+						totalOffsetInBytes -= negOffsetInBytes;
+						totalSizeInBytes += negOffsetInBytes;
+
+						if (!srv->InitFromApiData(&dev, cmp.indexBuffer.typedBuffer,
+							VK_FORMAT_R16_UINT, totalOffsetInBytes, totalSizeInBytes)) {
+							Log::Fatal(L"Failed to create a SRV");
+							return Status::ERROR_INTERNAL;
+						}
+					}
+				}
 #endif
 
-			descTable.SetSrv(&dev, 2, 0, srv.get()); // t1, heap offset: 2, tableLayout(1, 1)
-			pws->DeferredRelease(std::move(srv)); //this object will be destrcuted after the current frame fence term.
-		}
-		else {
-			// null idx buffer view.
-			descTable.SetSrv(&dev, 2, 0, pws->m_nullBufferSRV.get());	// t1, heap offset: 2, tableLayout(1, 1)
-		}
-
-		// CB
-		{
-			CB cb = {};
-
-			cb.m_vertexStride = gp->m_input.vertexBuffer.strideInBytes / sizeof(float);
-			cb.m_nbVertices = gp->GetVertexCountAfterTransform();
-			cb.m_nbIndices = gp->m_input.indexBuffer.count;
-			cb.m_dstVertexBufferOffsetIdx = (uint32_t)(gp->m_vertexBufferOffsetInBytes / sizeof(uint32_t));
-
-			cb.m_indexRangeMin = gp->m_input.indexRange.isEnabled ? gp->m_input.indexRange.minIndex : 0u;
-			cb.m_indexRangeMax = gp->m_input.indexRange.isEnabled ? gp->m_input.indexRange.maxIndex : 0xFFFF'FFFFu;
-			cb.m_tileResolutionLimit = gp->m_input.tileResolutionLimit;
-			cb.m_tileUnitLength = gp->m_input.tileUnitLength;
-
-			cb.m_enableTransformation = gp->m_input.useTransform;
-			cb.m_nbDispatchThreads = nbDispatchThreadGroups * m_threadDim_X;
-			if (op == BuildOp::MeshColorBuild || op == BuildOp::MeshColorPostBuild) {
-				cb.m_nbHashTableElemsNum = (uint32_t)gp->m_edgeTableBuffer->m_size / (sizeof(uint32_t));
+				descTable.SetSrv(&dev, 2, 0, srv.get()); // t1, heap offset: 2, tableLayout(1, 1)
+				pws->DeferredRelease(std::move(srv)); // This object will be destrcuted after finishing the GPU task.
 			}
 			else {
-				cb.m_nbHashTableElemsNum = 0;
+				// null idx buffer view.
+				descTable.SetSrv(&dev, 2, 0, pws->m_nullBufferSRV.get());	// t1, heap offset: 2, tableLayout(1, 1)
 			}
 
-			cb.m_allocationOffset = gp->m_input.surfelType == BVHTask::GeometryInput::SurfelType::MeshColors ? 2 * (uint32_t)gp->m_nbVertexIndices : 0;
+			// CB
+			{
+				CB cb = {};
 
-			cb.m_vtxSRVOffsetElm = vtxSRV_OffsetElm;
-			cb.m_idxSRVOffsetElm = idxSRV_OffsetElm;
+				cb.m_vertexStride = cmp.vertexBuffer.strideInBytes / sizeof(float);
+				cb.m_nbVertices = cmp.vertexBuffer.count;
+				if (cmp.indexRange.isEnabled)
+					cb.m_nbVertices = cmp.indexRange.maxIndex - cmp.indexRange.minIndex + 1;
 
-			cb.m_transformationMatrix = gp->m_input.transform;
-			memcpy(cbPtrForWrite, &cb, sizeof(cb));
+				cb.m_nbIndices = cmp.indexBuffer.count;
+				cb.m_dstVertexBufferOffsetIdx = (uint32_t)(gp->m_vertexBufferOffsetInBytes / sizeof(uint32_t));
 
-			descTable.SetCbv(&dev, 0, 0, &cbv); // b0, heap offset:0, tableLayout(0, 0)
-		}
+				cb.m_indexRangeMin = cmp.indexRange.isEnabled ? cmp.indexRange.minIndex : 0u;
+				cb.m_indexRangeMax = cmp.indexRange.isEnabled ? cmp.indexRange.maxIndex : 0xFFFF'FFFFu;
+				cb.m_tileResolutionLimit = gp->m_input.tileResolutionLimit;
+				cb.m_tileUnitLength = gp->m_input.tileUnitLength;
 
+				cb.m_enableTransformation = cmp.useTransform;
+				cb.m_nbDispatchThreads = nbDispatchThreadGroups * m_threadDim_X;
+				if (op == BuildOp::MeshColorBuild || op == BuildOp::MeshColorPostBuild) {
+					cb.m_nbHashTableElemsNum = (uint32_t)gp->m_edgeTableBuffer->m_size / (sizeof(uint32_t));
+				}
+				else {
+					cb.m_nbHashTableElemsNum = 0;
+				}
 
-		if (gp->m_edgeTableBuffer)
-			descTable.SetUav(&dev, 3, 0, gp->m_edgeTableBuffer->m_uav.get());
-		else
-			descTable.SetUav(&dev, 3, 0, pws->m_nullBufferUAV.get());
+				cb.m_allocationOffset = gp->m_input.surfelType == BVHTask::GeometryInput::SurfelType::MeshColors ? 2 * (uint32_t)gp->m_totalNbIndices : 0;
 
-		descTable.SetUav(&dev, 4, 0, gp->m_index_vertexBuffer->m_uav.get());
+				cb.m_vtxSRVOffsetElm = vtxSRV_OffsetElm;
+				cb.m_idxSRVOffsetElm = idxSRV_OffsetElm;
+				cb.m_idxComponentOffset = gp->m_indexOffsets[cmpIdx];
+				cb.m_vtxComponentOffset = gp->m_vertexOffsets[cmpIdx];
 
-		if (op != BuildOp::VertexUpdate) {
-			// Allocation task.
-			if (gp->m_input.forceDirectTileMapping) {
-				// null view for directLightingcache counter and its index.
+				cb.m_transformationMatrix = cmp.transform;
+				memcpy(cbPtrForWrite, &cb, sizeof(cb));
+
+				descTable.SetCbv(&dev, 0, 0, &cbv); // b0, heap offset:0, tableLayout(0, 0)
+			}
+
+			if (gp->m_edgeTableBuffer)
+				descTable.SetUav(&dev, 3, 0, gp->m_edgeTableBuffer->m_uav.get());
+			else
+				descTable.SetUav(&dev, 3, 0, pws->m_nullBufferUAV.get());
+
+			descTable.SetUav(&dev, 4, 0, gp->m_index_vertexBuffer->m_uav.get());
+
+			if (op != BuildOp::VertexUpdate) {
+				// Allocation task.
+				if (gp->m_input.forceDirectTileMapping) {
+					// null view for directLightingcache counter and its index.
+					descTable.SetUav(&dev, 5, 0, pws->m_nullBufferUAV.get()); // u1, heap offset: 4, talbeLayout(2, 1)
+					descTable.SetUav(&dev, 6, 0, pws->m_nullBufferUAV.get()); // u2, heap offset: 5, talbeLayout(2, 2)
+				}
+				else {
+					descTable.SetUav(&dev, 5, 0, gp->m_directLightingCacheCounter->m_uav.get()); // u1, heap offset: 4, talbeLayout(2, 1)
+
+					if (gp->m_directLightingCacheIndices)
+						descTable.SetUav(&dev, 6, 0, gp->m_directLightingCacheIndices->m_uav.get()); // u2, heap offset: 5, talbeLayout(2, 2)
+					else
+						descTable.SetUav(&dev, 6, 0, pws->m_nullBufferUAV.get());
+				}
+			}
+			else {
+				// Update task.
+				// vertex index, tile counter, tile index are null uav views.
 				descTable.SetUav(&dev, 5, 0, pws->m_nullBufferUAV.get()); // u1, heap offset: 4, talbeLayout(2, 1)
 				descTable.SetUav(&dev, 6, 0, pws->m_nullBufferUAV.get()); // u2, heap offset: 5, talbeLayout(2, 2)
-			} else {
-				descTable.SetUav(&dev, 5, 0, gp->m_directLightingCacheCounter->m_uav.get()); // u1, heap offset: 4, talbeLayout(2, 1)
-
-				if (gp->m_directLightingCacheIndices)
-					descTable.SetUav(&dev, 6, 0, gp->m_directLightingCacheIndices->m_uav.get()); // u2, heap offset: 5, talbeLayout(2, 2)
-				else
-					descTable.SetUav(&dev, 6, 0, pws->m_nullBufferUAV.get());
 			}
-		}
-		else {
-			// Update task.
-			// vertex index, tile counter, tile index are null uav views.
-			descTable.SetUav(&dev, 5, 0, pws->m_nullBufferUAV.get()); // u1, heap offset: 4, talbeLayout(2, 1)
-			descTable.SetUav(&dev, 6, 0, pws->m_nullBufferUAV.get()); // u2, heap offset: 5, talbeLayout(2, 2)
-		}
 
-		{
-			std::vector<GraphicsAPI::DescriptorTable*> descTables = { &descTable };
-			cmdList->SetComputeRootDescriptorTable(&m_rootSignature, 0, descTables.data(), descTables.size());
-		}
+			{
+				std::vector<GraphicsAPI::DescriptorTable*> descTables = { &descTable };
+				cmdList->SetComputeRootDescriptorTable(&m_rootSignature, 0, descTables.data(), descTables.size());
+			}
 
-		cmdList->Dispatch(nbDispatchThreadGroups, 1, 1);
+			cmdList->Dispatch(nbDispatchThreadGroups, 1, 1);
+		}
 
 		return Status::OK;
 	};

@@ -23,6 +23,7 @@
 #include <Utils.h>
 #include <Log.h>
 #include <RenderTaskValidator.h>
+#include <Geometry.h>
 #include <DenoisingContext.h>
 
 namespace KickstartRT_NativeLayer
@@ -39,6 +40,32 @@ namespace KickstartRT_NativeLayer
 
 		const GraphicsAPI::TexValidator directLighting("directLighting", input->directLighting);
 		RETURN_IF_STATUS_FAILED(directLighting.AssertIsNotNull());
+
+		return Status::OK;
+	}
+
+	Status RenderTaskValidator::DirectLightTransferTask(const RenderTask::DirectLightTransferTask* input)
+	{
+		if (input->target == InstanceHandle::Null) {
+			Log::Fatal(L"Target must be a non-null instance");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		BVHTask::Instance* inst = BVHTask::Instance::ToPtr(input->target);
+		if (!inst) {
+			Log::Fatal(L"Bad instance handle.");
+			return Status::ERROR_INTERNAL;
+		}
+
+		if (!inst->m_geometry->m_input.allowLightTransferTarget) {
+			Log::Fatal(L"Target geometry must be built with allowLightTransferTarget=true");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		if (inst->m_geometry->m_input.surfelType != BVHTask::GeometryInput::SurfelType::WarpedBarycentricStorage) {
+			Log::Fatal(L"Target geometry must be built with surfelType=WarpedBarycentricStorage");
+			return Status::ERROR_INVALID_PARAM;
+		}
 
 		return Status::OK;
 	}

@@ -41,9 +41,15 @@ struct CB_Injection
     float3  m_rayOrigin;
     uint    m_depthType;
 
-    float   m_averageWindow;
-	uint    m_padding_u1;
-    float2  m_padding;
+	float		m_averageWindow;
+	uint32_t    m_pad0;
+	float		m_subPixelJitterOffsetX;
+	float		m_subPixelJitterOffsetY;
+
+	uint32_t    m_strideX;
+	uint32_t    m_strideY;
+	uint32_t    m_strideOffsetX;
+	uint32_t    m_strideOffsetY;
 
     float4x4	m_clipToViewMatrix;
     float4x4	m_viewToWorldMatrix;
@@ -108,15 +114,49 @@ void hit(uint primitiveIndex, float2 barycentrics, uint instanceIndex, float ray
     }
 }
 
-// ---[ This corresponds to RGS or Compute for inline raytracing. ]---
-void rgs(uint2 LaunchIndex)
+float2 GetJitteredLaunchIndex(uint2 samplePos)
 {
-	uint2 samplePos = ToSamplePos(LaunchIndex);
+	return samplePos + uint2(CB.m_subPixelJitterOffsetX, CB.m_subPixelJitterOffsetY);
+}
+
+float3 GetLightInjectionValueForSamplePos(uint2 samplePos)
+{
+	return t_LightingTex[samplePos].xyz;
+}
+
+uint2 GetTracePixelFromSamplePos(uint2 samplePos)
+{
+	//return samplePos * int2(CB.m_strideX, CB.m_strideY) + int2(CB.m_strideOffsetX, CB.m_strideOffsetY);
+	// Make sure we're wrapping samples when trying to sample outside of the screen.
+
+	const int2 viewport			= int2(CB.m_Viewport_Width, CB.m_Viewport_Height);
+
+	const int2 AABB_start		= samplePos * int2(CB.m_strideX, CB.m_strideY);
+	const int2 AABB_end			= (samplePos + 1) * int2(CB.m_strideX, CB.m_strideY);
+	const int2 AABB_end_clamped	= min(AABB_end, viewport);
+
+	const int2 offsetRect				= (AABB_end_clamped - AABB_start);
+	const int2 strideOffsetWrapped		= int2(CB.m_strideOffsetX, CB.m_strideOffsetY) % offsetRect;
+
+	uint2 tracePixel					= AABB_start + strideOffsetWrapped;
+	return tracePixel;
+}
+
+// ---[ This corresponds to RGS or Compute for inline raytracing. ]---
+void rgs(uint2 LaunchThread)
+{
+	const uint2 samplePos = ToSamplePos(LaunchThread);
+
+	// Upscale pixel according to the sub-sampling options.
+	uint2 tracePixel					= GetTracePixelFromSamplePos(samplePos);
+
+	const float2 jitteredLaunchIndex	= GetJitteredLaunchIndex(tracePixel);
+	const float3 color					= GetLightInjectionValueForSamplePos(tracePixel);
 
 	float4 origin = float4(CB.m_rayOrigin.xyz, 1.0);
 
 	bool   depthIsValid;
-	float3 destination = GetWorldPositionFromDepth(LaunchIndex, samplePos, depthIsValid);
+	float3 destination = GetWorldPositionFromDepth(jitteredLaunchIndex, tracePixel, depthIsValid);
 
 	float3 viewDir = destination.xyz - origin.xyz;
 	float  lengthFromViewOrigin = length(viewDir);
@@ -132,7 +172,7 @@ void rgs(uint2 LaunchIndex)
 	// Trace the ray
 	Payload payload;
 	payload.HitT = lengthFromViewOrigin;
-	payload.Col = t_LightingTex[samplePos].xyz;
+	payload.Col = color;
 
 	if ((!depthIsValid) || any(isnan(payload.Col)) || any(isinf(payload.Col))) {
 		// depth texture holds an invalid value.
@@ -146,7 +186,7 @@ void rgs(uint2 LaunchIndex)
 		rayQuery.TraceRayInline(
 			t_SceneBVH,
 			RT_RayFlags, //ray flags
-			0xFF, //instanceInclusionMask
+			(uint)InstancePropertyMask::DirectLightInjectionTarget,
 			ray);
 		rayQuery.Proceed();
 
@@ -165,7 +205,7 @@ void rgs(uint2 LaunchIndex)
 		TraceRay(
 			t_SceneBVH,
 			RT_RayFlags, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::DirectLightInjectionTarget,
 			0, //RayContributionToHitGroupIndex
 			0, //MultiplierForGeometryContributionToHitGroupIndex
 			0, //MissShaderIndex

@@ -564,7 +564,7 @@ namespace KickstartRT_NativeLayer
 		}
 
 		GraphicsAPI::DescriptorTable descTable;
-		if (!descTable.Allocate(&tws->m_CBVSRVUAVHeap, &m_descTableLayout2)) {
+		if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), &m_descTableLayout2)) {
 			Log::Fatal(L"Faild to allocate a portion of desc heap.");
 			return Status::ERROR_INTERNAL;
 		}
@@ -652,6 +652,8 @@ namespace KickstartRT_NativeLayer
 
 			cb.m_CTA_Swizzle_GroupDimension_X = CTA_Swizzle_GroupDimension_X;
 			cb.m_CTA_Swizzle_GroupDimension_Y = CTA_Swizzle_GroupDimension_Y;
+
+			cb.m_maxRayLength = common->maxRayLength;
 
 			switch (common->rayOffset.type) {
 			case RenderTask::RayOffset::Type::e_Disabled:
@@ -952,7 +954,7 @@ namespace KickstartRT_NativeLayer
 		}
 
 		GraphicsAPI::DescriptorTable sampler_descTable;
-		if (!sampler_descTable.Allocate(&tws->m_CBVSRVUAVHeap, &m_descTableLayout0)) {
+		if (!sampler_descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), &m_descTableLayout0)) {
 			Log::Fatal(L"Faild to allocate a portion of desc heap.");
 			return Status::ERROR_INTERNAL;
 		}

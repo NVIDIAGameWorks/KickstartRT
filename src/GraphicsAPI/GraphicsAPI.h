@@ -169,36 +169,21 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
      * DescriptorPool in VK
      ***************************************************************/
     struct DescriptorTableLayout;
-    struct DescriptorHeap : public DeviceObject
+
+    struct IDescriptorHeap : public DeviceObject
     {
 #if defined(GRAPHICS_API_D3D12)
-        struct ApiData {
-            struct HeapEntry {
-                ID3D12DescriptorHeap* m_descHeap = nullptr;
-                uint64_t    m_incrementSize = 0;
-                uint32_t    m_numDescriptors = 0;
-                uint32_t    m_currentOffset = 0;
-            };
-
-            std::array<HeapEntry, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> m_heaps;
-        };
         struct AllocationInfo {
             uint64_t                    m_incrementSize;
             uint32_t                    m_numDescriptors;
             D3D12_CPU_DESCRIPTOR_HANDLE m_hCPU;
             D3D12_GPU_DESCRIPTOR_HANDLE m_hGPU;
         };
-
 #elif defined(GRAPHICS_API_VK)
-        struct ApiData {
-            VkDescriptorPool    m_descPool = {};
-            VkDevice            m_device = {};
-        };
         struct AllocationInfo {
             VkDescriptorSet     m_descSet = {};
         };
 #endif
-
         enum class Type : uint32_t
         {
             TextureSrv,
@@ -221,9 +206,35 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
             return static_cast<std::underlying_type<Type>::type>(type);
         };
 #if defined(GRAPHICS_API_D3D12)
-        static constexpr D3D12_DESCRIPTOR_HEAP_TYPE nativeType(const Type &t);
+        static constexpr D3D12_DESCRIPTOR_HEAP_TYPE nativeType(const Type& t);
+        virtual void GetHeaps(std::vector<ID3D12DescriptorHeap*>& retHeaps) = 0;
 #elif defined(GRAPHICS_API_VK)
-        static constexpr VkDescriptorType nativeType(const Type &type);
+        static constexpr VkDescriptorType nativeType(const Type& type);
+#endif
+
+        virtual ~IDescriptorHeap() = default;
+        virtual bool ResetAllocation() = 0;
+        virtual bool Allocate(const DescriptorTableLayout* desctable, AllocationInfo* retAllocationInfo, uint32_t unboundDescTableCount) = 0;
+    };
+
+    struct DescriptorHeap : public IDescriptorHeap
+    {
+#if defined(GRAPHICS_API_D3D12)
+        struct ApiData {
+            struct HeapEntry {
+                ID3D12DescriptorHeap* m_descHeap = nullptr;
+                uint64_t    m_incrementSize = 0;
+                uint32_t    m_numDescriptors = 0;
+                uint32_t    m_currentOffset = 0;
+            };
+
+            std::array<HeapEntry, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> m_heaps;
+        };
+#elif defined(GRAPHICS_API_VK)
+        struct ApiData {
+            VkDescriptorPool    m_descPool = {};
+            VkDevice            m_device = {};
+        };
 #endif
 
         struct Desc
@@ -246,10 +257,41 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         virtual ~DescriptorHeap();
         void SetName(const std::wstring& str);
         bool Create(Device* dev, const Desc& desc, bool isShaderVisible);
+#if defined(GRAPHICS_API_D3D12)
+        virtual void GetHeaps(std::vector<ID3D12DescriptorHeap*>& retHeaps);
+#endif
 
-        bool ResetAllocation();
-        bool Allocate(const DescriptorTableLayout *desctable, AllocationInfo* retAllocationInfo, uint32_t unboundDescTableCount);
+        virtual bool ResetAllocation() override;
+        virtual bool Allocate(const DescriptorTableLayout *desctable, AllocationInfo* retAllocationInfo, uint32_t unboundDescTableCount) override;
     };
+
+#if defined(GRAPHICS_API_D3D12)
+    struct DescriptorSubHeap : public IDescriptorHeap
+    {
+        DescriptorHeap     *m_heap = nullptr;
+
+        struct ApiData {
+            struct SubHeapEntry {
+                ID3D12DescriptorHeap* m_descHeap = nullptr;
+                uint64_t    m_incrementSize = 0;
+                uint32_t    m_numDescriptors = 0;
+                uint32_t    m_currentOffset = 0;
+                uint32_t    m_subAllocationOffset = 0;
+                uint32_t    m_subAllocationSize = 0;
+            };
+            std::array<SubHeapEntry, D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES> m_subHeaps;
+        };
+        ApiData    m_apiData = {};
+        // VK doesn't support allocating a sub heap for now...
+
+        virtual ~DescriptorSubHeap();
+        bool Init(DescriptorHeap* heap, const DescriptorHeap::Desc& desc);
+        virtual void GetHeaps(std::vector<ID3D12DescriptorHeap*>& retHeaps);
+
+        virtual bool ResetAllocation() override;
+        virtual bool Allocate(const DescriptorTableLayout* desctable, AllocationInfo* retAllocationInfo, uint32_t unboundDescTableCount) override;
+    };
+#endif
 
     /***************************************************************
      * DescriptorTableLayout(D3D12_DESCRIPTOR_RANGE) in D3D12
@@ -270,12 +312,12 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 #endif
 
 #if defined(GRAPHICS_API_D3D12)
-        static constexpr D3D12_DESCRIPTOR_RANGE_TYPE nativeType(const DescriptorHeap::Type& type);
+        static constexpr D3D12_DESCRIPTOR_RANGE_TYPE nativeType(const IDescriptorHeap::Type& type);
 #endif
 
         struct Range
         {
-            DescriptorHeap::Type    m_type = DescriptorHeap::Type::Cbv;
+            IDescriptorHeap::Type    m_type = IDescriptorHeap::Type::Cbv;
             uint32_t                m_baseRegIndex = 0;
             uint32_t                m_descCount = 0;
             uint32_t                m_regSpace = 0;
@@ -289,7 +331,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
         virtual ~DescriptorTableLayout();
         void SetName(const std::wstring& str);
 
-        void AddRange(DescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t offset = 0);
+        void AddRange(IDescriptorHeap::Type type, uint32_t baseRegIndex, int32_t descriptorCount, uint32_t regSpace, uint32_t offset = 0);
         bool SetAPIData(Device *dev);
     };
 
@@ -306,11 +348,11 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 #if defined(GRAPHICS_API_D3D12)
         struct ApiData
         {
-            DescriptorHeap::AllocationInfo          m_heapAllocationInfo;
+            IDescriptorHeap::AllocationInfo          m_heapAllocationInfo;
         };
 #elif defined(GRAPHICS_API_VK)
         struct ApiData {
-            DescriptorHeap::AllocationInfo          m_heapAllocationInfo;
+            IDescriptorHeap::AllocationInfo          m_heapAllocationInfo;
         };
 #endif
 
@@ -319,7 +361,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 
         virtual ~DescriptorTable();
 
-        bool Allocate(DescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount = 0);
+        bool Allocate(IDescriptorHeap* descHeap, const DescriptorTableLayout* descTableLayout, uint32_t unboundDescTableCount = 0);
 
         bool SetSrv(Device* dev, uint32_t rangeIndex, uint32_t indexInRange, const ShaderResourceView* srv);
         bool SetUav(Device* dev, uint32_t rangeIndex, uint32_t indexInRange, const UnorderedAccessView* uav);
@@ -1095,7 +1137,7 @@ namespace KickstartRT_NativeLayer::GraphicsAPI {
 #endif
         void ClearState();
 
-        bool SetDescriptorHeap(DescriptorHeap* heap);
+        bool SetDescriptorHeap(IDescriptorHeap* heap);
         bool HasDebugCommandList() const;
         bool AssertResourceStates(Resource** resArr, SubresourceRange* subresourceArr, size_t numRes, ResourceState::State* statesToAssert);
 #if defined(GRAPHICS_API_D3D12)

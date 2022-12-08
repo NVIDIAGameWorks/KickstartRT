@@ -120,16 +120,16 @@ namespace KickstartRT_NativeLayer
 {
 	class RenderPass_NRDDenoising;
 
-	struct RenderPass_DirectLightingCacheDenoising
+	struct RenderPass_Denoising
 	{
 #if (KickstartRT_SDK_WITH_NRD)
 		std::unique_ptr<RenderPass_NRDDenoising>		m_nrd;
 #endif
 	public:
-		RenderPass_DirectLightingCacheDenoising();
-		~RenderPass_DirectLightingCacheDenoising();
-		RenderPass_DirectLightingCacheDenoising(RenderPass_DirectLightingCacheDenoising&&);
-		RenderPass_DirectLightingCacheDenoising& operator=(RenderPass_DirectLightingCacheDenoising&& other);
+		RenderPass_Denoising();
+		~RenderPass_Denoising();
+		RenderPass_Denoising(RenderPass_Denoising&&);
+		RenderPass_Denoising& operator=(RenderPass_Denoising&& other);
 		Status Init(PersistentWorkingSet* pws, const DenoisingContextInput& context, ShaderFactory::Factory* sf);
 		Status DeferredRelease(PersistentWorkingSet* pws);
 		Status BuildCommandList(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DenoisingOutput& reflectionOutputs);

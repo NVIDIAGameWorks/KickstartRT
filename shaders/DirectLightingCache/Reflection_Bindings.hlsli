@@ -64,7 +64,7 @@ struct CB_Reflection
 	float	m_OffsetRay_WorldPosition_Threshold;
 	float	m_OffsetRay_WorldPosition_Float_Scale;
 	float	m_OffsetRay_WorldPosition_Int_Scale;
-	float	m_paddingf32_1;
+	float	m_maxRayLength;
 
 	float	m_OffsetRay_CamDistance_Constant;
 	float	m_OffsetRay_CamDistance_Linear;

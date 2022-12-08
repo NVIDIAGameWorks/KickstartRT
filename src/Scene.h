@@ -92,7 +92,7 @@ namespace KickstartRT_NativeLayer
 		Status BuildDirectLightingCacheDescriptorTable(TaskWorkingSet* tws, GraphicsAPI::DescriptorTableLayout* srcLayout, GraphicsAPI::DescriptorTable* destDescTable, std::deque<BVHTask::Instance*>& retInstances);
 
 		Status UpdateDenoisingContext(PersistentWorkingSet* pws, UpdateFromExecuteContext* updateFromExc);
-		Status UpdateScenegraphFromExecuteContext(PersistentWorkingSet* pws, UpdateFromExecuteContext* updateFromExc, bool isSceneChanged);
+		Status UpdateScenegraphFromExecuteContext(PersistentWorkingSet* pws, UpdateFromExecuteContext* updateFromExc, bool& isSceneChanged);
 
 	public:
 		Status BuildTask(GPUTaskHandle *retHandle, TaskTracker *taskTracker, PersistentWorkingSet* pws, TaskContainer_impl* arg_taskContainer, UpdateFromExecuteContext *updateFromExc, const BuildGPUTaskInput *input);

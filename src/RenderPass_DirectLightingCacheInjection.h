@@ -26,6 +26,7 @@
 
 #include <memory>
 #include <deque>
+#include <atomic>
 
 namespace KickstartRT_NativeLayer
 {
@@ -39,6 +40,8 @@ namespace KickstartRT_NativeLayer
 	struct RenderPass_DirectLightingCacheInjection
 	{
 		static constexpr uint32_t     m_threadDim_XY[2] = { 8, 16 };
+
+		static inline std::atomic<uint64_t>  s_seed = 0; // Used to generate unique injection offset.
 
 		enum DescTableLayout : uint32_t {
 			e_CB_CBV = 0,
@@ -62,11 +65,26 @@ namespace KickstartRT_NativeLayer
 			uint32_t    m_depthType;
 
 			float		m_averageWindow;
-			uint32_t    m_padding_u1;
-			float		m_padding[2];
+			uint32_t    m_pad0;
+			float		m_subPixelJitterOffsetX;
+			float		m_subPixelJitterOffsetY;
+
+			uint32_t    m_strideX;
+			uint32_t    m_strideY;
+			uint32_t    m_strideOffsetX;
+			uint32_t    m_strideOffsetY;
 
 			Math::Float_4x4	m_clipToViewMatrix;
 			Math::Float_4x4	m_viewToWorldMatrix;
+		};
+
+		struct CB_Transfer {
+			uint32_t		m_triangleCount;
+			uint32_t		m_targetInstanceIndex;
+			uint32_t		m_dstVertexBufferOffsetIdx; // Dest indices and vertices buffers are now unified. It needs the offset.
+			uint32_t		m_pad;
+
+			Math::Float_4x4	m_targetInstanceTransform;
 		};
 
 		struct CB_clear {
@@ -86,17 +104,38 @@ namespace KickstartRT_NativeLayer
 
 		GraphicsAPI::RootSignature			m_rootSignature;
 
+
+		GraphicsAPI::DescriptorTableLayout	m_descTableLayoutTransfer1;
+		GraphicsAPI::DescriptorTableLayout	m_descTableLayoutTransfer2;
+
+		GraphicsAPI::RootSignature			m_rootSignatureTransfer;
+
 		ShaderFactory::ShaderDictEntry*		m_shaderTable = nullptr;
 		ShaderFactory::ShaderDictEntry*		m_pso = nullptr;
 		ShaderFactory::ShaderDictEntry*		m_pso_clear = nullptr;
+		ShaderFactory::ShaderDictEntry*		m_shaderTableTransfer = nullptr;
+		ShaderFactory::ShaderDictEntry*		m_psoTransfer = nullptr;
+	public:
+		struct TransferParams
+		{
+			uint32_t targetInstanceIndex;
+			uint32_t sourceInstanceIndex;
+		};
+	private:
+
+		Status DispatchInject(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DirectLightingInjectionTask* input);
+		Status DispatchTransfer(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DirectLightTransferTask* input, const TransferParams& params);
 
     public:
         Status Init(PersistentWorkingSet *pws, bool enableInlineRaytracing, bool enableShaderTableRaytracing);
 
-		Status Dispatch(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DirectLightingInjectionTask* input);
-		Status BuildCommandList(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList,
+		Status BuildCommandListInject(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList,
 			RenderPass_ResourceRegistry* resources,
 			GraphicsAPI::DescriptorTable *lightingCache_descTable, const RenderTask::DirectLightingInjectionTask* directLightingInjection);
+
+		Status BuildCommandListTransfer(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList,
+			RenderPass_ResourceRegistry* resources,
+			GraphicsAPI::DescriptorTable* lightingCache_descTable, const RenderTask::DirectLightTransferTask* directLightingTransfer, const TransferParams& params);
 
 		Status DispatchClear(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, const CB_clear& clCB);
 		Status BuildCommandListClear(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList,

@@ -28,13 +28,16 @@ namespace KickstartRT_NativeLayer {
         void LogGeometryInput(const BVHTask::GeometryInput *input)
         {
             Log::Info(L"Name: %s", input->name ? input->name : L"Null");
-            Log::Info(L"VertexBuffer: Offset: %d, Stride : %d, Count: %d",
-                input->vertexBuffer.offsetInBytes, input->vertexBuffer.strideInBytes, input->vertexBuffer.count);
-            Log::Info(L"IndexBuffer: Offset: %d, Count: %d",
-                input->indexBuffer.offsetInBytes, input->indexBuffer.count);
-            Log::Info(L"IndexRange: Enabled: %s, Min: %d, Max: %d",
-                input->indexRange.isEnabled ? L"True" : L"False",
-                input->indexRange.minIndex, input->indexRange.maxIndex);
+
+            for (auto&& cmp : input->components) {
+                Log::Info(L"VertexBuffer: Offset: %d, Stride : %d, Count: %d",
+                    cmp.vertexBuffer.offsetInBytes, cmp.vertexBuffer.strideInBytes, cmp.vertexBuffer.count);
+                Log::Info(L"IndexBuffer: Offset: %d, Count: %d",
+                    cmp.indexBuffer.offsetInBytes, cmp.indexBuffer.count);
+                Log::Info(L"IndexRange: Enabled: %s, Min: %d, Max: %d",
+                    cmp.indexRange.isEnabled ? L"True" : L"False",
+                    cmp.indexRange.minIndex, cmp.indexRange.maxIndex);
+            }
         };
 
         bool CheckInputTextureState(GraphicsAPI::CommandList* cmdList, const RenderTask::ShaderResourceTex* inputTex, GraphicsAPI::ResourceState::State expectedState)

@@ -124,19 +124,19 @@ namespace KickstartRT_NativeLayer
 			float	m_OffsetRay_WorldPosition_Threshold;
 			float	m_OffsetRay_WorldPosition_Float_Scale;
 			float	m_OffsetRay_WorldPosition_Int_Scale;
-			float	m_paddingf32_1;
+			float	m_maxRayLength;
 
 			float	m_OffsetRay_CamDistance_Constant;
 			float	m_OffsetRay_CamDistance_Linear;
 			float	m_OffsetRay_CamDistance_Quadratic;
-			float	m_paddingf32_2;
+			float	m_paddingf32_1;
 
 			Math::Float_4 m_roughnessMask;
 
 			float	m_roughnessMultiplier;
 			float	m_minRoughness;
 			float	m_maxRoughness;
-			float	m_paddingf32_3;
+			float	m_paddingf32_2;
 
 			uint32_t m_numLights;
 			uint32_t m_enableLightTex;
