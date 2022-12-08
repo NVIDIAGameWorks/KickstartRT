@@ -19,7 +19,7 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 * SOFTWARE.
 */
-#include <RenderPass_DirectLightingCacheDenoising.h>
+#include <RenderPass_Denoising.h>
 #include <RenderPass_Common.h>
 #include <common/ShaderBlob.h>
 #include <Utils.h>
@@ -236,7 +236,7 @@ namespace KickstartRT_NativeLayer
 
 			{
 				{ // Desctriptor Table
-					if (!descTable.Allocate(&tws->m_CBVSRVUAVHeap, m_descTableLayout.get())) {
+					if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), m_descTableLayout.get())) {
 						Log::Fatal(L"Failed to allocate a portion of desc heap.");
 						return Status::ERROR_INTERNAL;
 					}
@@ -271,7 +271,7 @@ namespace KickstartRT_NativeLayer
 						Math::Float_4 roughnessMask;
 						Math::Float_4 hitTMask;
 
-						float		metersToUnitsMultiplier;
+						float		pad9_0;
 						uint32_t    pad9;
 						uint32_t    pad10;
 						uint32_t    pad11;
@@ -317,7 +317,7 @@ namespace KickstartRT_NativeLayer
 					cbuffer.roughnessMask = output.roughness.roughnessMask;
 					cbuffer.hitTMask = output.occlusionHitTMask;
 
-					cbuffer.metersToUnitsMultiplier = 1;
+					cbuffer.pad9_0 = 0.0f;
 
 					if (output.shadow.numLights == 1)
 						cbuffer.tanOfLightAngularRadius = std::tan(output.shadow.lightInfos[0].dir.angularExtent);
@@ -470,8 +470,6 @@ namespace KickstartRT_NativeLayer
 			case nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST:	return L"IN_SPEC_RADIANCE_HITDIST";
 			case nrd::ResourceType::IN_DIFF_HITDIST:			return L"IN_DIFF_HITDIST";
 			case nrd::ResourceType::IN_SPEC_HITDIST:			return L"IN_SPEC_HITDIST";
-			case nrd::ResourceType::IN_DIFF_DIRECTION_PDF:		return L"IN_DIFF_DIRECTION_PDF";
-			case nrd::ResourceType::IN_SPEC_DIRECTION_PDF:		return L"IN_SPEC_DIRECTION_PDF";
 			case nrd::ResourceType::IN_DIFF_CONFIDENCE:			return L"IN_DIFF_CONFIDENCE";
 			case nrd::ResourceType::IN_SPEC_CONFIDENCE:			return L"IN_SPEC_CONFIDENCE";
 			case nrd::ResourceType::IN_SHADOWDATA:				return L"IN_SHADOWDATA";
@@ -863,11 +861,6 @@ namespace KickstartRT_NativeLayer
 		denoiserCreateDesc.memoryAllocatorInterface = { nullptr, nullptr, nullptr, nullptr };
 		denoiserCreateDesc.requestedMethodNum = kNumMethods;
 		denoiserCreateDesc.requestedMethods = methodDescs;
-#if _DEBUG
-		denoiserCreateDesc.enableValidation = true;
-#else
-		denoiserCreateDesc.enableValidation = false;
-#endif
 
 		assert(m_denoiser == nullptr);
 		RETURN_IF_STATUS_FAILED_NRD(nrd::CreateDenoiser(denoiserCreateDesc, m_denoiser));
@@ -1180,8 +1173,6 @@ namespace KickstartRT_NativeLayer
 			return rw;
 		}
 		case nrd::ResourceType::IN_SPEC_HITDIST:
-		case nrd::ResourceType::IN_DIFF_DIRECTION_PDF:
-		case nrd::ResourceType::IN_SPEC_DIRECTION_PDF:
 		case nrd::ResourceType::IN_DIFF_CONFIDENCE:
 		case nrd::ResourceType::IN_SPEC_CONFIDENCE:
 		case nrd::ResourceType::OUT_SPEC_HITDIST: {
@@ -1297,23 +1288,22 @@ namespace KickstartRT_NativeLayer
 		nrd::Method method = GetNrdMethodForDenoisingContext(m_context);
 
 		if (method == nrd::Method::REBLUR_SPECULAR) {
-			nrd::ReblurSpecularSettings settings = {};
+			nrd::ReblurSettings settings = {};
 			settings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::REBLUR_SPECULAR, &settings));
 		}
 		else if (method == nrd::Method::REBLUR_DIFFUSE) {
-			nrd::ReblurDiffuseSettings settings = {};
+			nrd::ReblurSettings settings = {};
 			settings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::REBLUR_DIFFUSE, &settings));
 		}
 		else if (method == nrd::Method::REBLUR_DIFFUSE_SPECULAR) {
-			nrd::ReblurDiffuseSpecularSettings settings = {};
-			settings.specularSettings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
-			settings.diffuseSettings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
+			nrd::ReblurSettings settings = {};
+			settings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::REBLUR_DIFFUSE_SPECULAR, &settings));
 		}
 		else if (method == nrd::Method::REBLUR_DIFFUSE_OCCLUSION) {
-			nrd::ReblurDiffuseSettings settings = {};
+			nrd::ReblurSettings settings = {};
 			settings.checkerboardMode = GetCheckerboardMode(reflectionOutputs, frameIndex);
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::REBLUR_DIFFUSE_OCCLUSION, &settings));
 		}
@@ -1333,11 +1323,11 @@ namespace KickstartRT_NativeLayer
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::RELAX_DIFFUSE_SPECULAR, &settings));
 		}
 		else if (method == nrd::Method::SIGMA_SHADOW) {
-			nrd::SigmaShadowSettings settings = {};
+			nrd::SigmaSettings settings = {};
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::SIGMA_SHADOW, &settings));
 		}
 		else if (method == nrd::Method::SIGMA_SHADOW_TRANSLUCENCY) {
-			nrd::SigmaShadowSettings settings = {};
+			nrd::SigmaSettings settings = {};
 			RETURN_IF_STATUS_FAILED_NRD(nrd::SetMethodSettings(*m_denoiser, nrd::Method::SIGMA_SHADOW_TRANSLUCENCY, &settings));
 		}
 		else {
@@ -1435,7 +1425,7 @@ namespace KickstartRT_NativeLayer
 
 #if defined(GRAPHICS_API_D3D12)
 				GraphicsAPI::DescriptorTable samplerTable;
-				if (!samplerTable.Allocate(&tws->m_CBVSRVUAVHeap, m_samplerTableLayout.get())) {
+				if (!samplerTable.Allocate(tws->m_CBVSRVUAVHeap.get(), m_samplerTableLayout.get())) {
 					Log::Fatal(L"Faild to allocate a portion of desc heap.");
 					return Status::ERROR_INTERNAL;
 				}
@@ -1472,7 +1462,7 @@ namespace KickstartRT_NativeLayer
 					NRDStateTransitions stateTransitions;
 
 					{ // Desctriptor Table
-						if (!descTable.Allocate(&tws->m_CBVSRVUAVHeap, m_descTableLayout.get())) {
+						if (!descTable.Allocate(tws->m_CBVSRVUAVHeap.get(), m_descTableLayout.get())) {
 							Log::Fatal(L"Faild to allocate a portion of desc heap.");
 							return Status::ERROR_INTERNAL;
 						}
@@ -1577,12 +1567,12 @@ namespace KickstartRT_NativeLayer
 #endif
 
 	// Prevent inlining to allow forward declaration of internal render passes as unique_ptr
-	RenderPass_DirectLightingCacheDenoising::RenderPass_DirectLightingCacheDenoising() = default;
-	RenderPass_DirectLightingCacheDenoising::~RenderPass_DirectLightingCacheDenoising() = default;
-	RenderPass_DirectLightingCacheDenoising::RenderPass_DirectLightingCacheDenoising(RenderPass_DirectLightingCacheDenoising&&) = default;
-	RenderPass_DirectLightingCacheDenoising& RenderPass_DirectLightingCacheDenoising::operator=(RenderPass_DirectLightingCacheDenoising&&) = default;
+	RenderPass_Denoising::RenderPass_Denoising() = default;
+	RenderPass_Denoising::~RenderPass_Denoising() = default;
+	RenderPass_Denoising::RenderPass_Denoising(RenderPass_Denoising&&) = default;
+	RenderPass_Denoising& RenderPass_Denoising::operator=(RenderPass_Denoising&&) = default;
 
-	Status RenderPass_DirectLightingCacheDenoising::Init(PersistentWorkingSet* pws, const DenoisingContextInput& context, ShaderFactory::Factory* sf) {
+	Status RenderPass_Denoising::Init(PersistentWorkingSet* pws, const DenoisingContextInput& context, ShaderFactory::Factory* sf) {
 #if (KickstartRT_SDK_WITH_NRD)
 		if (context.denoisingMethod == DenoisingContextInput::DenoisingMethod::NRD_Reblur ||
 			context.denoisingMethod == DenoisingContextInput::DenoisingMethod::NRD_Relax ||
@@ -1601,7 +1591,7 @@ namespace KickstartRT_NativeLayer
 		return Status::OK;
 	}
 
-	Status RenderPass_DirectLightingCacheDenoising::DeferredRelease(PersistentWorkingSet* pws) {
+	Status RenderPass_Denoising::DeferredRelease(PersistentWorkingSet* pws) {
 #if (KickstartRT_SDK_WITH_NRD)
 		if (m_nrd)
 			return m_nrd->DeferredRelease(pws);
@@ -1611,7 +1601,7 @@ namespace KickstartRT_NativeLayer
 		return Status::OK;
 	}
 
-	Status RenderPass_DirectLightingCacheDenoising::BuildCommandList(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DenoisingOutput& output) {
+	Status RenderPass_Denoising::BuildCommandList(TaskWorkingSet* tws, GraphicsAPI::CommandList* cmdList, RenderPass_ResourceRegistry* resources, const RenderTask::DenoisingOutput& output) {
 #if (KickstartRT_SDK_WITH_NRD)
 		RETURN_IF_STATUS_FAILED(m_nrd->BuildCommandList(tws, cmdList, resources, output));
 #else

@@ -24,6 +24,7 @@
 #include <Utils.h>
 #include <Log.h>
 #include <Geometry.h>
+#include <RenderPass_DirectLightingCacheAllocation.h>
 
 #include <cstring>
 
@@ -46,6 +47,12 @@ namespace KickstartRT_NativeLayer
 
 		if (gh->m_registerStatus != BVHTask::RegisterStatus::NotRegistered) {
 			Log::Fatal(L"Geometry handle was tried to be registerd multiple times.");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		auto sts = RenderPass_DirectLightingCacheAllocation::CheckInputs(*input);
+		if (sts != Status::OK) {
+			Log::Fatal(L"Invaid geometry input detected.");
 			return Status::ERROR_INVALID_PARAM;
 		}
 
@@ -80,8 +87,24 @@ namespace KickstartRT_NativeLayer
 			Log::Fatal(L"Geometry handle was tried to be updated without registering it.");
 			return Status::ERROR_INVALID_PARAM;
 		}
+		if (gh->m_input.components.size() != (size_t)newInput->components.size()) {
+			Log::Fatal(L"The number of geometry components are different.");
+			return Status::ERROR_INVALID_PARAM;
+		}
 
-		m_updatedGeometries.push_back({ gHandle, *newInput });
+		auto sts = RenderPass_DirectLightingCacheAllocation::CheckUpdateInputs(gh->m_input, *newInput);
+		if (sts != Status::OK) {
+			Log::Fatal(L"Invaid geometry input detected.");
+			return Status::ERROR_INVALID_PARAM;
+		}
+
+		m_updatedGeometries.push_back({ gHandle });
+		{
+			auto& upd(m_updatedGeometries.back());
+			upd.m_input = *newInput;
+			upd.m_input.name = nullptr;
+		}
+
 		m_hasUpdate = true;
 
 		return Status::OK;

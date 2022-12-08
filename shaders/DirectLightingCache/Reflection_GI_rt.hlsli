@@ -205,7 +205,7 @@ void rgs(uint2 LaunchIndex)
 	ray.Direction = direction;
 	ray.Origin = offset_ray(surfacePos, normal - viewDir, distanceFromCamera);
 	ray.TMin = 0.0;
-	ray.TMax = FLT_MAX;
+	ray.TMax = CB.m_maxRayLength;
 
 	// ray validation and early out
 	if (!isRayValid) {
@@ -225,7 +225,7 @@ void rgs(uint2 LaunchIndex)
 		RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
 		rayQuery.TraceRayInline(t_SceneBVH,
 			RT_RayFlags, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			ray);
 		rayQuery.Proceed();
 
@@ -246,7 +246,7 @@ void rgs(uint2 LaunchIndex)
 		TraceRay(
 			t_SceneBVH,
 			RT_RayFlags, // ray flags
-			0xFF, // instanceInclusionMask
+			(uint)InstancePropertyMask::Visible,
 			0, //RayContributionToHitGroupIndex
 			0, //MultiplierForGeometryContributionToHitGroupIndex
 			0, //MissShaderIndex

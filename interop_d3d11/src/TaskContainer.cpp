@@ -44,17 +44,15 @@ namespace KickstartRT_ExportLayer
 
 	static void ConvertGeometryInput(InteropCacheSet* cs, const D3D11::BVHTask::GeometryInput* input_11, D3D12::BVHTask::GeometryInput* input_12, intptr_t usedTaskContainer)
 	{
-		auto& src(*input_11);
-		auto& dst(*input_12);
 
-		{
+		input_12->components.resize(input_11->components.size());
+		for (size_t i = 0; i < input_11->components.size(); ++i) {
+			auto& dst(input_12->components[i]);
+			const auto& src(input_11->components[i]);
+
 			dst.indexBuffer.count = src.indexBuffer.count;
 			dst.indexBuffer.format = src.indexBuffer.format;
 			dst.indexBuffer.offsetInBytes = src.indexBuffer.offsetInBytes;
-#if 0
-			// Common state promotion (CMN -> NonPixShRes) should happen in D3D12 KS SDK. 
-			dst.indexBuffer.m_resourceState = D3D12_RESOURCE_STATE_COMMON;
-#endif
 
 			if (cs->ConvertGeometry(src.indexBuffer.resource, &dst.indexBuffer.resource, usedTaskContainer) != Status::OK) {
 				Log::Fatal(L"Failed to convert index buffer resource.");
@@ -63,34 +61,34 @@ namespace KickstartRT_ExportLayer
 			dst.indexRange.isEnabled = src.indexRange.isEnabled;
 			dst.indexRange.maxIndex = src.indexRange.maxIndex;
 			dst.indexRange.minIndex = src.indexRange.minIndex;
-		}
-		{
+
 			dst.vertexBuffer.count = src.vertexBuffer.count;
 			dst.vertexBuffer.format = src.vertexBuffer.format;
 			dst.vertexBuffer.offsetInBytes = src.vertexBuffer.offsetInBytes;
-#if 0
-			// Common state promotion (CMN -> NonPixShRes) should happen in D3D12 KS SDK. 
-			dst.vertexBuffer.resourceState = D3D12_RESOURCE_STATE_COMMON;
-#endif
 			dst.vertexBuffer.strideInBytes = src.vertexBuffer.strideInBytes;
 
 			if (cs->ConvertGeometry(src.vertexBuffer.resource, &dst.vertexBuffer.resource, usedTaskContainer) != Status::OK) {
 				Log::Fatal(L"Failed to convert vertex buffer resource.");
 			}
+
+			dst.useTransform = src.useTransform;
+			dst.transform = src.transform;
 		}
 
-		dst.allowUpdate = src.allowUpdate;
-		dst.directTileMappingThreshold = src.directTileMappingThreshold;
-		dst.forceDirectTileMapping = src.forceDirectTileMapping;
-		dst.surfelType = (D3D12::BVHTask::GeometryInput::SurfelType)src.surfelType;
-		dst.buildHint = (D3D12::BVHTask::GeometryInput::BuildHint)src.buildHint;
-		dst.name = src.name;
-		dst.tileResolutionLimit = src.tileResolutionLimit;
-		dst.tileUnitLength = src.tileUnitLength;
-		dst.transform = src.transform;
-		dst.type = static_cast<decltype(dst.type)>(src.type);
-		dst.useTransform = src.useTransform;
+		{
+			auto& src(*input_11);
+			auto& dst(*input_12);
 
+			dst.allowUpdate = src.allowUpdate;
+			dst.directTileMappingThreshold = src.directTileMappingThreshold;
+			dst.forceDirectTileMapping = src.forceDirectTileMapping;
+			dst.surfelType = (D3D12::BVHTask::GeometryInput::SurfelType)src.surfelType;
+			dst.buildHint = (D3D12::BVHTask::GeometryInput::BuildHint)src.buildHint;
+			dst.name = src.name;
+			dst.tileResolutionLimit = src.tileResolutionLimit;
+			dst.tileUnitLength = src.tileUnitLength;
+			dst.type = static_cast<decltype(dst.type)>(src.type);
+		}
 	}
 
 	static void ConvertInstanceInput(InteropCacheSet* cs, const D3D11::BVHTask::InstanceInput* input_11, D3D12::BVHTask::InstanceInput* input_12)
@@ -103,7 +101,10 @@ namespace KickstartRT_ExportLayer
 		static_assert(sizeof(dst.geomHandle) == sizeof(uint64_t));
 		dst.geomHandle = static_cast<D3D12::GeometryHandle>(src.geomHandle);
 		dst.name = src.name;
+		std::copy(std::begin(src.initialTileColor), std::end(src.initialTileColor), std::begin(dst.initialTileColor));
 		dst.transform = src.transform;
+		dst.participatingInTLAS = src.participatingInTLAS;
+		dst.instanceInclusionMask = (D3D12::BVHTask::InstanceInclusionMask)src.instanceInclusionMask;
 	}
 
 	static void ConvertGeometryTask(InteropCacheSet* cs, const D3D11::BVHTask::GeometryTask* task_11, D3D12::BVHTask::GeometryTask* task_12, intptr_t usedTaskContainer)
@@ -477,6 +478,8 @@ namespace KickstartRT_ExportLayer
 
 		ConvertViewport(src->viewport, dst->viewport);
 
+		dst->enableBilinearSampling = src->enableBilinearSampling;
+
 		dst->halfResolutionMode = (D3D12::RenderTask::HalfResolutionMode)src->halfResolutionMode;
 
 		ConvertRayOffset(src->rayOffset, dst->rayOffset);
@@ -530,6 +533,7 @@ namespace KickstartRT_ExportLayer
 
 				ConvertViewport(rtTask_11->viewport, rtTask_12.viewport);
 				rtTask_12.averageWindow = rtTask_11->averageWindow;
+				rtTask_12.injectionResolutionStride = rtTask_11->injectionResolutionStride;
 				rtTask_12.clipToViewMatrix = rtTask_11->clipToViewMatrix;
 				rtTask_12.viewToWorldMatrix = rtTask_11->viewToWorldMatrix;
 				rtTask_12.useInlineRT = rtTask_11->useInlineRT;

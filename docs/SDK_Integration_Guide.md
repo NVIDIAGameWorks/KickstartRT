@@ -55,7 +55,7 @@ the command lists to be executed by the engine.
 
 ## BVH Building
 
-### Mesh Initialisation
+### Mesh Initialization
 Kickstart RT will automatically build and maintain the BVH's for the
 scene, but the engine must provide the input vertex and index buffers
 with the transform matrices for each object that is to be visible to the
@@ -72,32 +72,48 @@ object.
 
 ```
 // Build the BVHs for all geometries at startup
-for (auto& prim : primitiveList)
+for (auto& geom : geometryList)
 {
     KickstartRT::D3D12::BVHTask::GeometryTask task;
 
-    // Create a geometry handle
+    // create a geometry handle
     m_executeContext->CreateGeometryHandles(&task.handle, 1);
-
-    // populate the index buffer and vertex buffer data
-    task.input.indexBuffer.resource = prim->getIndexBuffer()->getD3DBuffer();
-    task.input.indexBuffer.format = prim->getIndexBuffer()->getFormat();
-    task.input.indexBuffer.offsetInBytes = prim->getStartIndex() * prim->indexSizeInBytes();
-    task.input.indexBuffer.count = prim->getTriangleCount() * 3;
-    task.input.vertexBuffer.resource = prim->getVertexBuffer()->getD3DBuffer();
-    task.input.vertexBuffer.format = prim->getVertexBuffer()->getFormat();
-    task.input.vertexBuffer.offsetInBytes = prim->getVertexBuffer()->getOffset();
-    task.input.vertexBuffer.strideInBytes = prim->getVertexBuffer()->getStride();
-    task.input.vertexBuffer.count = prim->getVertexCount();
-
-    // override any defaults
-    task.input.type = KickstartRT::D3D12::BVHTask::GeometryInput::Type::TrianglesIndexed;
-
-    // schedule the task to be built against a task container.
-    m_taskContainer->ScheduleBVHTask(&task);
 
     // store the handle for later use
     prim->m_KSGeomHandle = task.handle;
+
+    task.taskOperation = SDK::D3D12::BVHTask::TaskOperation::Register;
+
+    task.input.allowUpdate = geom.isSkinnedMesh;
+    task.input.type = decltype(task.input)::Type::TrianglesIndexed;
+    task.input.surfelType = SurfelType::WarpedBarycentricStorage;
+    task.input.allowLightTransferTarget = geom.allowLodSwitching;
+    task.input.forceDirectTileMapping = geom.isHighpolygonModel;
+    task.input.tileUnitLength = systemDefinedUnitLength;
+    task.input.tileResolutionLimit = systemDefinedTileResolutionLimit;
+
+    // populate the index buffer and vertex buffer data
+    for (auto&& component : geom->components) {
+        decltype(task.input)::GeometryComponent cmp;
+
+        cmp.indexBuffer.resource = component->indexBuf;
+        cmp.indexBuffer.format = DXGI_FORMAT_R32_UINT;
+        cmp.indexBuffer.offsetInBytes = component->indexOffset * sizeof(uint32_t);
+        cmp.indexBuffer.count = component->numIndices;
+
+        cmp.vertexBuffer.resource = component->vertexBuf;
+        cmp.vertexBuffer.format = DXGI_FORMAT_R32G32B32_FLOAT;
+        cmp.vertexBuffer.offsetInBytes = component->vertexOffset * sizeof(float) * 3;
+        cmp.vertexBuffer.strideInBytes = sizeof(float) * 3;
+        cmp.vertexBuffer.count = component->numVertices;
+
+        cmp.useTransform = false;
+
+        task.input.components.push_back(cmp);
+    }
+
+    // schedule the task to be built against a task container.
+    m_taskContainer->ScheduleBVHTask(&task);
 }
 ```
 
@@ -248,6 +264,7 @@ renderTask.viewToWorldMatrix = cameraView.getViewToWorldF();
 
 // Tuning parameters
 renderTask.averageWindow = c_AccumulationWindow;
+renderTask.injectionResolutionStride = c_InjectionStride;
 renderTask.useInlineRT = false;
 
 // Schedule the task
@@ -493,7 +510,76 @@ m_taskContainer->ScheduleRenderTask(&renderTask);
 ```
 
 Once the output buffers have been denoised, they can be passed back into
-the render pipeline for consumption by the remaining stages.
+the render pipeline for consumption by the remaining stages if they have been denoised with Relax or Sigma. 
+As for Reblur, the output color components are encoded in YCoCg color space in the current implementation, so applications need to decode them after fetching the texture. NRD SDK has provided a utility function, 
+`REBLUR_BackEnd_UnpackRadianceAndNormHitDist()` to decode it to RGB color space, but it's essentialy a conversion from YCoCg to RGB, so you can do it inline with your own shader code. So, when using Reblur, it's goo to visit NRD's shader code once to make sure what you need to do with the output texture.
+
+
+## Direct Lighting Cache Transfer
+When a new object appears in the scene and a new Geometry and Instance are registered in the SDK, the
+Direct Lighting Cache is initialized with the specified values.
+To store light information in it, the SDK must perform Direct Lighting Injection over several frames with GBuffers drawn by the rasterizer.
+
+Additionally, the Direct Lighting Cache is essentially tied to the object's polygon topology.  If the topology is changed, it must be registered in the SDK as a separate Geometry and Instance.
+Therefore, if the topology of an object changes(for example due to a change of LoD) the information in the Direct Lighting Cache will be lost.
+
+To avoid this data loss, the SDK provides a task to transfer the Direct Lighting Cache between objects that have different topologies.
+Before placing the transfer task, application must place the target geometry in the scene as usual(i.e. registering a new geometry and an instance) and then specify it as a target instance in the task.
+
+```
+KickstartRT::D3D12::RenderTask::DirectLightTransferTask transferTask;
+
+// specify target instance to be transfered
+transfer.target = targetInstanceHandle;
+
+// Schedule the task
+m_taskContainer->ScheduleRenderTask(&transferTask);
+
+```
+
+At first glance, this task looks pretty simple, but in fact, it requires careful control of the InstanceInclusionMask.
+
+First, either the target or the source instance should not be visible in Reflection or GI rendering because they will be placed in the same space in general.
+Therefore, the application needs to set `InstanceInclusionMask::VisibleInRT` flags properly for those objects.
+In addition, the object which will be the source of the transfer should set `LightTransferSource` to be visible in the transfer operation. This flag is orthogonal to `VisibleInRT` flags.  
+
+Here is one possible way to set a DirectLightTransferTask for switching LoD of an object.
+
+```
+To switch an object's LoD from 0 to 1,
+
+1. Register geometries for LoD 0 and 1 to the SDK with `GeometryInput::allowLightTransferTarget` flag. 
+2. Register an instance for LoD 0.
+3. Render the instance in the rasterizer and do sufficient light injection tasks for several frames.
+~~~ Frame boundary ~~~~
+~~~ Frame boundary ~~~~
+When the rasterizer switches the LoD from 0 to 1,
+
+4. Register an instance for LoD 1 with `DirectLightInjectionTarget` and `VisibleInRT` flags.
+5. Update the instance for LoD 0 to clear `VisibleInRT` and `DirectLightInjectionTarget` flags, and set `LightTransferSource` flag.
+6. Set a light transfer task. Its target is the instance for LoD 1.
+7. Set Injection, Reflection, and GI tasks as needed (Since LoD 0 is invisible, it will not participate in the RT operations).
+~~~ Frame boundary ~~~~
+8. De-register the instance for LoD 0 (and the geometry too if it isn't needed anymore).
+```
+
+Another thing that needs to be careful is direct lighting cache instantiation.
+
+Since the size of the direct lighting cache is calculated by a compute shader while the buffer allocation is done on the CPU side, it needs a readback from the GPU after running the compute shader after registering a new geometry. So, to make sure the direct lighting cache instantiation is correct, the application needs to run a GPU command list that contains a BVH task to register a geometry and make sure of the completion.  Then call the `MarkGPUTaskAsCompleted()` function to tell this to the SDK. (The GPU work scheduling is described by [the following section](#executing-cpu-and-gpu-work)). 
+
+After completing the geometry registering task, the direct lighting cache of the instance will be allocated and the application can set the instance of the geometry as a target of a direct lighting cache transfer task.  
+
+Another option is to register the geometry in advance of registering the instance which refers to the geometry. Direct lighting cache allocation is tied to an instance, but its buffer size is calculated when registering the referred geometry. Direct lighting cache is allocated immediately if the referred geometry has been registered in advance.
+
+In contrast, it could be easy to manage the resource lifetime of the source instance of the direct lighting cache transfer. Application only needs to defer the destruction of the corresponding geometry and instance handles of the SDK. All other resources which are referred to when drawing the object in rasterization can be destructed as usual. SDK doesn't reference the resources such as vertex or index buffer except when registering the geometry in the SDK.
+
+
+When registering a geometry that will be used s a target of the transfer task, `GeometryInput::allowLightTransferTarget` must be set to true. Geometries with this flag will keep copies of the vertex and index buffers in the SDK even after its BLAS has been built, so it will use more VRAM than an object without this flag.
+
+
+Finally, the mechanism of the transfer task is not a simple data copy operation by a compute shader. It's done by ray tracing.
+More specifically, two rays are traced from the center of each polygon of the target object, toward the direction of the normal and its reversed directions, and then the data is copied from the direct lighting cache of the hit surface that is closer to the target object.
+Therefore, if the objects are too far apart in shape or have a fine convex shape, the ray trace may not be able to reach the source surface to obtain the direct lighting cache information.
 
 # Executing CPU and GPU work
 
@@ -702,8 +788,9 @@ struct RayOffset {
 
 NRDs documentation should be referred to when trying to determine issues
 and when tuning for the game, but the inputs should be tested for
-correctness as the first step.Assuming the gbuffer data passed to
-Kickstart RT works, some of the only differences may be with the
+correctness as the first step.  
+
+Assuming the gbuffer data passed to Kickstart RT works, some of the only differences may be with the
 velocity buffers, so these should be double checked. If no velocity
 buffer is provided, then NRD will try to create its own velocity vectors
 which can be a useful debug aide.
@@ -790,7 +877,11 @@ struct DirectLightingInjectionTask : public Task {
     //< SDK accumulates direct lighting information into allocated tiles on the surfaces. 
     //< Longer average window will converge values slowly but more stable than shorter average window. 
     float    	averageWindow = 200.f;
-    ...
+
+    //< The injection pass will trace and inject for every injectionResolutionStride'th pixel in directLighting texture
+    //< Note: must be non-zero
+    uint32_t    injectionResolutionStride = 4;
+...
 };
 ```
 When injecting the direct lighting into the cache, the average window
@@ -800,10 +891,10 @@ to lighting updates but may produce high frequency flickering. This can
 be reduced by increasing the average window to increase the temporal
 stability, but the right value needs tuning for the game.
 
-It is important to highlight that the direct lighting buffer does not
-need to be native resolution. The resolution is directly linked to the
-number of rays traced (1 per pixel), so a quality/performance tradeoff
-is possible.
+Also, it is important to set an appropriate value to injectionResolutionStride. 
+That value and the resolution of GBuffer are directly linked to the number of rays traced for injecting lighting to direct lighting cache.
+A ray for injecting lighting is traced each 4x4 pixel block of GBuffer by default. This is because the resolution of direct lighting cache is by far lower than the pixel resolution in general, so, it will be wasting to trace rays on each pixel for direct lighting injection.
+It is recommended to set a bigger stride especially when using high resolution GBuffer.
 
 ## Direct Lighting Input Reflections
 
@@ -896,6 +987,9 @@ a time.
 The new LOD will have a cold direct lighting cache but this
 will be updated to full intensity as soon as it is visible in the input
 buffer.
+
+Optionally, you can use the *DirectLightTransfer* task to transfer direct lighting information 
+from the old mesh to the new one.
 
 ## Asynchronous BVH Builds
 

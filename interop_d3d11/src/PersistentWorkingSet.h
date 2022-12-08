@@ -154,9 +154,9 @@ namespace KickstartRT_ExportLayer
         Microsoft::WRL::ComPtr<IDXGIAdapter1>       m_DXGIAdapter;
         Microsoft::WRL::ComPtr<ID3D12Device5>       m_device_12;
         Microsoft::WRL::ComPtr<ID3D12CommandQueue>  m_queue_12;
-        D3D12_COMMAND_LIST_TYPE                     m_queueType;
+        D3D12_COMMAND_LIST_TYPE                     m_queueType = D3D12_COMMAND_LIST_TYPE_COMPUTE;
 
-        KickstartRT::D3D12::ExecuteContext  *m_SDK_12;
+        KickstartRT::D3D12::ExecuteContext  *m_SDK_12 = nullptr;
 
         struct NativeFence {
             struct InflightTask {

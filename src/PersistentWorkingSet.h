@@ -54,7 +54,7 @@ namespace KickstartRT_NativeLayer
     struct RenderPass_DirectLightingCacheAllocation;
     struct RenderPass_DirectLightingCacheInjection;
     struct RenderPass_DirectLightingCacheReflection;
-    struct RenderPass_DirectLightingCacheDenoising;
+    struct RenderPass_Denoising;
 };
 
 namespace KickstartRT
@@ -110,6 +110,8 @@ namespace KickstartRT_NativeLayer
 
         std::unique_ptr<SharedCPUDescriptorHeap>            m_UAVCPUDescHeap1;
         std::unique_ptr<SharedCPUDescriptorHeap>            m_UAVCPUDescHeap2;
+
+        std::vector<std::unique_ptr<GraphicsAPI::DescriptorHeap>>   m_descHeaps;
 
     protected:
         std::optional<uint64_t>                             m_currentTaskIndex;

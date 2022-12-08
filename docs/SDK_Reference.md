@@ -198,6 +198,7 @@ Task -- Schedule --> TaskContainer
 DirectLightingInjectionTask --> Task
 TraceTasks[RenderTask::Trace*Task] --> Task
 DenoisingTasks[RenderTask::Denoise*Task] --> Task
+TransferTask[RenderTask::DirectLightTransfer] --> Task
 
 style Task fill:#ffa23e
 ```
@@ -212,6 +213,9 @@ Specular/Diffuse Reflection tasks use the input GBuffer's surface as the startin
 - *DenoisingTasks (for specular, diffuse reflections, ambient occlusion and shadows)*  
 Denoising tasks are for denoising the various rendering results output by the ray tracing task above. KickStart RT performs denoising tasks by calling into NVIDIA's NRD library internally. There are denoising tasks for Specular, Diffuse, Ambient Occlusion and Shadows, and these are used with the corresponding ray tracing tasks.  
 These tasks need an intermediate render target to perform multi-pass rendering, and it is represented with Denoising Context Handle in the SDK (described later).  
+
+- *TransferTask*
+This task allows to transfer direct lighting information between two meshes.  This allows for LOD transitions.  It is performed by tracing two rays per primitive of the source mesh to the destination mesh.  See [Integration Guide](docs/SDK_Integration_Guide.md) for more details.
 
 #### Log
 Log is a namespace that contains functions to control the output of error and other kind of messages from the SDK, which can be suppressed or retrieved by setting up a callback function and then processed by the application.

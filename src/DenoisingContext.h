@@ -29,13 +29,13 @@
 namespace KickstartRT_NativeLayer
 {
 	class PersistentWorkingSet;
-	struct RenderPass_DirectLightingCacheDenoising;
+	struct RenderPass_Denoising;
 
 	struct DenoisingContext
 	{
 		const uint64_t m_id;
 		DenoisingContextInput m_input;
-		std::unique_ptr<RenderPass_DirectLightingCacheDenoising> m_RP;
+		std::unique_ptr<RenderPass_Denoising> m_RP;
 
 		DenoisingContext(uint64_t id, const DenoisingContextInput *input);
 		~DenoisingContext();

@@ -50,7 +50,11 @@ namespace KickstartRT_NativeLayer
 
 		struct Geometry {
 			const uint64_t					m_id;
-			BVHTask::GeometryInput			m_input = {};
+			BVHTask::GeometryInput								m_input = {};
+			uint32_t						m_totalNbIndices = 0;
+			uint32_t						m_totalNbVertices = 0;
+			std::vector<uint32_t>			m_vertexOffsets;
+			std::vector<uint32_t>			m_indexOffsets;
 
 			RegisterStatus											m_registerStatus = RegisterStatus::NotRegistered;
 
@@ -58,8 +62,8 @@ namespace KickstartRT_NativeLayer
 
 			std::unique_ptr<SharedBuffer::BufferEntry>				m_index_vertexBuffer;
 
-			size_t													m_nbVertexIndices = 0;
-			size_t													m_nbVertices = 0;
+			//size_t													m_nbVertexIndices = 0;
+			//size_t													m_nbVertices = 0;
 			size_t													m_vertexBufferOffsetInBytes = (size_t)-1;
 
 			std::unique_ptr<SharedBuffer::BufferEntry>				m_directLightingCacheCounter;
@@ -102,10 +106,16 @@ namespace KickstartRT_NativeLayer
 			// Returns the vertex count after transforming process in the SDK.
 			inline uint32_t GetVertexCountAfterTransform()
 			{
-				if (m_input.indexRange.isEnabled)
-					return m_input.indexRange.maxIndex - m_input.indexRange.minIndex + 1;
+				uint32_t	cnt = 0;
 
-				return m_input.vertexBuffer.count;
+				for (auto&& cmp : m_input.components) {
+					if (cmp.indexRange.isEnabled)
+						cnt += cmp.indexRange.maxIndex - cmp.indexRange.minIndex + 1;
+					else
+						cnt += cmp.vertexBuffer.count;
+				}
+
+				return cnt;
 			}
 		};
 
