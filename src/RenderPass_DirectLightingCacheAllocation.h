@@ -74,8 +74,8 @@ namespace KickstartRT_NativeLayer
 
 			uint32_t	m_vtxSRVOffsetElm;
 			uint32_t	m_idxSRVOffsetElm;
-			uint32_t	m_padd_0;
-			uint32_t	m_padd_1;
+			uint32_t    m_vtxComponentOffset;
+			uint32_t    m_idxComponentOffset;
 
 			Math::Float_4x4   m_transformationMatrix;
 		};
@@ -102,8 +102,8 @@ namespace KickstartRT_NativeLayer
         Status BuildCommandListForAdd(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, std::deque<BVHTask::Geometry *>& addedGeometries);
         Status BuildCommandListForUpdate(TaskWorkingSet* fws, GraphicsAPI::CommandList* cmdList, std::deque<BVHTask::Geometry *>& updatedGeometries);
 
-        static Status CheckInputs(const BVHTask::GeometryInput& input);
-        static Status CheckUpdateInputs(const BVHTask::GeometryInput& oldInputs, const BVHTask::GeometryInput& input);
+		static Status CheckInputs(const BVHTask::GeometryInput& input);
+		static Status CheckUpdateInputs(const BVHTask::GeometryInput& oldInput, const BVHTask::GeometryInput& input);
         static Status AllocateResourcesForGeometry(TaskWorkingSet* fws, std::deque<BVHTask::Geometry *>& addedGeometries);
     };
 };

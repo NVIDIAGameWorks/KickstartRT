@@ -34,7 +34,7 @@
 #include <RenderPass_DirectLightingCacheAllocation.h>
 #include <RenderPass_DirectLightingCacheInjection.h>
 #include <RenderPass_DirectLightingCacheReflection.h>
-#include <RenderPass_DirectLightingCacheDenoising.h>
+#include <RenderPass_Denoising.h>
 
 namespace KickstartRT_NativeLayer
 {
