@@ -436,4 +436,98 @@ namespace LightCache
         // NV HW store data atomically by 32bit, so, under the race condition, it would get false intencity but no false chroma.
         DLCBuffer::Store2(u_directLightingCacheBuffer[NonUniformResourceIndex(bufferIndex)], index + 0, data);
     }
+
+    void StoreFaceMeshColors(MeshColors::MeshColorPrimInfo primInfo, uint instanceIndex, uint primitiveIndex, uint2 data) {
+        // Currently not supported.
+    }
+
+    void StoreFaceTileCache(uint instanceIndex, uint primitiveIndex, uint2 data) {
+#if KICKSTARTRT_ENABLE_DIRECT_LIGHTING_CACHE_INDIRECTION_TABLE
+        uint indexBufferSlot, indexBufferBaseOffset, DLCBufferSlot, DLCBufferBaseOffset;
+        {
+            uint4 u4 = u_directLightingCacheIndirectionTable[instanceIndex];
+            indexBufferSlot = u4.x;
+            indexBufferBaseOffset = u4.y;
+            DLCBufferSlot = u4.z;
+            DLCBufferBaseOffset = u4.w;
+        }
+        DLCBufferType tileIndexBuffer = u_directLightingCacheBuffer[NonUniformResourceIndex(indexBufferSlot)];
+        DLCBufferIndex tileBufferIndex = DLCBufferSlot;
+        DLCBufferType tileBuffer = u_directLightingCacheBuffer[NonUniformResourceIndex(tileBufferIndex)];
+#else
+        DLCBufferType tileIndexBuffer = u_directLightingCacheBuffer[NonUniformResourceIndex(instanceIndex * 2 + 0)];
+        DLCBufferIndex tileBufferIndex = instanceIndex * 2 + 1;
+        DLCBufferType tileBuffer = u_directLightingCacheBuffer[NonUniformResourceIndex(tileBufferIndex)];
+        uint indexBufferBaseOffset = 0;
+        uint DLCBufferBaseOffset = 0;
+#endif
+
+        // if a valid offset for tileIndexBuffer is assigned, load index buffer and calc tileIndex.
+        uint baseOffset;
+        uint2 tileResolutions;
+
+        TileCache::LoadTileCacheEntry(tileIndexBuffer, indexBufferBaseOffset, primitiveIndex, baseOffset, tileResolutions);
+
+        if (tileResolutions.x == 0 && tileResolutions.y == 0) {
+            // if a valid tileIndexBuffer is assigned, packedTielResolutions will always be nonzero value (e.g. at least 1x1 tile should be assigned).
+            // it means tileIndexBuffer is unbound, and it should be direct tile mapping mode.
+            // There is a case that tileBuffer is also unbound, but D3D12 safely access null UAV which is set in a desc table entry.
+            uint tileIndex = primitiveIndex;
+
+            tileIndex *= 2;
+            tileIndex += DLCBufferBaseOffset;
+
+            DLCBuffer::Store2(tileBuffer, tileIndex + 0, data);
+        }
+        else
+        {
+            // We could attempt to address the tile resolution assymetry by allocating a warp per primitive and thus (partially) parallelize this loop.
+            for (uint i = 0; i < min(tileResolutions.x, 16u); ++i)
+            {
+                for (uint j = 0; j < min(tileResolutions.y, 16u); ++j)
+                {
+                    // bc.xy give weights for 2nd and 3rd vertices.
+                    uint uIdx = i;
+                    uint vIdx = j;
+
+                    uint tileIndex = baseOffset + vIdx * tileResolutions.x + uIdx;
+                    tileIndex *= 2;
+                    tileIndex += DLCBufferBaseOffset;
+
+                    DLCBuffer::Store2(tileBuffer, tileIndex + 0, data);
+                }
+            }
+        }
+    }
+
+    // Write to every light cache element on a primitive.
+    // Can be expensive, possibly.
+    void Store(uint instanceIndex, uint primitiveIndex, float3 tileData)
+    {
+        uint2 data = fromRGBToYCoCg(tileData, /*hasClearTag*/ false);
+
+#if KICKSTARTRT_ENABLE_DIRECT_LIGHTING_CACHE_INDIRECTION_TABLE
+        uint surfelInfoBufferSlot, surfelInfoBufferBaseOffset;
+        {
+            uint2 u2 = u_directLightingCacheIndirectionTable[NonUniformResourceIndex(instanceIndex)].xy;
+            surfelInfoBufferSlot = u2.x;
+            surfelInfoBufferBaseOffset = u2.y;
+        }
+        DLCBufferType surfelInfo = u_directLightingCacheBuffer[NonUniformResourceIndex(surfelInfoBufferSlot)];
+#else
+        DLCBufferType surfelInfo = u_directLightingCacheBuffer[NonUniformResourceIndex(instanceIndex * 2 + 0)];
+        uint surfelInfoBufferBaseOffset = 0;
+#endif
+
+        SurfelCache::Header header = SurfelCache::LoadHeader(surfelInfo, surfelInfoBufferBaseOffset);
+
+        if ((TileMode)header.format == TileMode::MeshColors) {
+            MeshColors::MeshColorPrimInfo primInfo = MeshColors::LoadMeshColorPrimInfo(surfelInfo, surfelInfoBufferBaseOffset, primitiveIndex);
+            StoreFaceMeshColors(primInfo, instanceIndex, primitiveIndex, data);
+        }
+        else
+        {
+            StoreFaceTileCache(instanceIndex, primitiveIndex, data);
+        }
+    }
 }

@@ -38,6 +38,7 @@ namespace KickstartRT_NativeLayer
 	public:
 		static constexpr size_t kSize = cexpr_max(
 			sizeof(RenderTask::DirectLightingInjectionTask),
+			sizeof(RenderTask::DirectLightTransferTask),
 			sizeof(RenderTask::TraceSpecularTask),
 			sizeof(RenderTask::TraceDiffuseTask),
 			sizeof(RenderTask::TraceAmbientOcclusionTask),
@@ -58,6 +59,7 @@ namespace KickstartRT_NativeLayer
 
 		static constexpr void ValidateTasks() {
 			ValidateTask<RenderTask::DirectLightingInjectionTask>();
+			ValidateTask<RenderTask::DirectLightTransferTask>();
 			ValidateTask<RenderTask::TraceSpecularTask>();
 			ValidateTask<RenderTask::TraceDiffuseTask>();
 			ValidateTask<RenderTask::TraceAmbientOcclusionTask>();
@@ -108,14 +110,16 @@ namespace KickstartRT_NativeLayer
 	public:
 		bool HasDenoisingTask() const { return m_hasDenoisingTask; };
 
-		uint32_t GetNumRenderTasks() const { return (uint32_t)m_renderTasks.size(); }
-
 		Status ScheduleRenderTasks(const RenderTask::Task* const* tasks, uint32_t nbTasks) {
 			for (uint32_t i = 0; i < nbTasks; ++i) {
 				const auto& task(*(tasks[i]));
 
 				if (task.type == RenderTask::Task::Type::DirectLightInjection) {
 					auto& input(*static_cast<const RenderTask::DirectLightingInjectionTask*>(&task));
+					m_renderTasks.emplace_back(input);
+				}
+				else if (task.type == RenderTask::Task::Type::DirectLightTransfer) {
+					auto& input(*static_cast<const RenderTask::DirectLightTransferTask*>(&task));
 					m_renderTasks.emplace_back(input);
 				}
 				else if (task.type == RenderTask::Task::Type::TraceSpecular) {

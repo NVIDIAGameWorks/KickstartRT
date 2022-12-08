@@ -210,9 +210,9 @@ if (KickstartRT_SDK_WITH_NRD)
 	set(NRD_STATIC_LIBRARY ON CACHE BOOL "")
 	add_subdirectory(thirdparty/RayTracingDenoiser)
 	set_property(TARGET "NRD" PROPERTY FOLDER "thirdparty/RayTracingDenoiser")
-	set_property(TARGET "NrdShaders" PROPERTY FOLDER "thirdparty/RayTracingDenoiser")
+	set_property(TARGET "NRDShaders" PROPERTY FOLDER "thirdparty/RayTracingDenoiser")
 
-    list(APPEND SHADER_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/thirdparty/RayTracingDenoiser/Include)
+    list(APPEND SHADER_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/thirdparty/RayTracingDenoiser/Shaders/Include)
     list(APPEND SHADER_DEFINES KickstartRT_SDK_WITH_NRD=1)
 else()
      # Shader includes must be available because the compile scans the source for "#include" to keep track of dirty state.

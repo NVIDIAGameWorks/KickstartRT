@@ -19,28 +19,5 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 * SOFTWARE.
 */
-#include <Scene.h>
-#include <Platform.h>
-#include <Utils.h>
-#include <Log.h>
-#include <RenderPass_Denoising.h>
-
-namespace KickstartRT_NativeLayer
-{
-	DenoisingContext::DenoisingContext(uint64_t id, const DenoisingContextInput* input) :m_id(id), m_input(*input) {
-
-	}
-
-	DenoisingContext::~DenoisingContext() {
-		assert(m_RP == nullptr);
-	}
-
-	void DenoisingContext::DeferredRelease(PersistentWorkingSet* pws) {
-		if (m_RP) {
-			m_RP->DeferredRelease(pws);
-			m_RP.reset();
-		}
-	}
-};
-
-
+#define INLINE_RAY_TRACING 1
+#include "Transfer_rt.hlsli"
